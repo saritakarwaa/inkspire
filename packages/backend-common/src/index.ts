@@ -1,0 +1,1 @@
+export const JWTSECRET=process.env.JWTSECRET || "1234"

@@ -1,1 +1,0 @@
-export const JWTSECRET="1234"

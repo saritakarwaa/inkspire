@@ -66,10 +66,10 @@ app.post("/room",middleware,async(req,res)=>{
             }
         })
          res.json({roomId:room.id})
-   }
+    }    
    catch(e){
         console.error(e)
-        res.status(411).json({message:"error"})
+        res.status(411).json({message:"room already exists with this code"})
    }
 })
 

@@ -4,9 +4,14 @@ import { JWTSECRET } from "@repo/backend-common/config"
 import { middleware } from "./middleware.js"
 import {CreateUserSchema,SignInSchema,CreateRoomSchema} from "@repo/common/types"
 import {prismaClient} from "@repo/db/client"
-
+import cors from "cors";
 const app=express()
 
+
+app.use(cors({
+  origin: "http://localhost:3000", 
+  credentials: true
+}));
 app.use(express.json())
 app.post("/signup",async (req,res)=>{
     const parsedData=CreateUserSchema.safeParse(req.body)
@@ -73,18 +78,48 @@ app.post("/room",middleware,async(req,res)=>{
    }
 })
 
-app.get("/chat/room/:roomId",async(req,res)=>{
-    const roomId=Number(req.params.roomId)
-    const messages= await prismaClient.chat.findMany({
-        where:{
-            roomId:roomId
-        },
-        orderBy:{
-            id:"desc"
-        },
-        take:50
-    })
-    res.json({messages})
+app.get("/chat/:roomId",async(req,res)=>{
+    try{
+        const roomId=Number(req.params.roomId)
+        const messages= await prismaClient.chat.findMany({
+            where:{
+                roomId:roomId
+            },
+            orderBy:{
+                id:"desc"
+            },
+            take:50
+        })
+        res.json({messages})
+    }
+    catch(e){
+        console.log(e)
+        res.json({messages:[]})
+    }
 })
 
-app.listen(3001)
+app.get("/room/:slug",async(req,res)=>{
+     const slug=req.params.slug
+   try{
+    const room= await prismaClient.room.findUnique({
+        where:{
+            slug
+        },
+    })
+    if (!room) {
+        console.log("room not found")
+         res.status(404).json({ message: "Room is not found" });
+         return
+    }
+    res.json({room})
+   }
+    catch (e) {
+        console.error("Error fetching room:", e);
+         res.status(500).json({ message: "Internal server error" });
+    }
+})
+
+
+
+
+app.listen(3001,()=> console.log("HTTP backend running on port 3001"))

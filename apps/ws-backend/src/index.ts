@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken"
 import { JWTSECRET } from "@repo/backend-common/config";
 import type { WebSocket } from "ws";
 const wss=new WebSocketServer({port:8080})
+import {prismaClient} from "@repo/db/client"
 
 //ugly state management using a global variable
 interface User{
@@ -42,7 +43,7 @@ wss.on('connection',function connection(ws,request){
         ws,userId,rooms:[]
     })
     
-    ws.on('message',function message(data){ 
+    ws.on('message',async function message(data){ 
        const parsedData=JSON.parse(data as unknown as string)
        if(parsedData.type==="join_room"){
         const user=users.find(x=>x.ws===ws) //find the user in the global users array
@@ -56,6 +57,11 @@ wss.on('connection',function connection(ws,request){
        if(parsedData.type==="chat"){ //type:"chat",message:"hi there",roomId:"123"
         const roomId=parsedData.roomId
         const message=parsedData.message
+        await prismaClient.chat.create({
+            data:{
+                roomId,message,userId
+            }
+        })
         users.forEach(user=>{
             if(user.rooms.includes(roomId)){
                 user.ws.send(JSON.stringify({

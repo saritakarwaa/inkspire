@@ -23,7 +23,10 @@ app.post("/signup",async (req,res)=>{
     
     try{
         const existing=await prismaClient.user.findUnique({where:{email:username}})
-        if(existing) res.status(400).json({message:'Email already exists'})
+        if(existing) {
+            res.status(400).json({message:'Email already exists'})
+            return
+        }
         const user=await prismaClient.user.create( {data: { name, email:username, password }})
         res.json({userId:user.id})
     }
@@ -54,23 +57,24 @@ app.post("/signin",async (req,res)=>{
 })
 
 app.post("/room",middleware,async(req,res)=>{
-
+    console.log("Incoming body:", req.body);
     const parsedData=CreateRoomSchema.safeParse(req.body)
+    console.log("Zod errors:", parsedData);
     if(!parsedData.success){
+        console.log("BODY:", req.body);
         res.json({message:"Incorrect inputs"});
         return;
     }
     //@ts-ignore
     const userId=req.userId
    try{
-        const {name}=parsedData.data
         const room=await prismaClient.room.create({
             data:{
-                slug:name,
+                slug:parsedData.data.name,
                 adminId:userId
             }
         })
-         res.json({roomId:room.id})
+        res.json({roomId:room.id})
     }    
    catch(e){
         console.error(e)
@@ -78,9 +82,14 @@ app.post("/room",middleware,async(req,res)=>{
    }
 })
 
-app.get("/chat/:roomId",async(req,res)=>{
+app.get("/chats/:roomId",async(req,res)=>{
+    console.log("Incoming roomId:", req.params.roomId)
+     const roomId=Number(req.params.roomId)
+    if (isNaN(roomId)) {
+     res.status(400).json({ message: "Invalid room ID" });
+    }
     try{
-        const roomId=Number(req.params.roomId)
+       
         const messages= await prismaClient.chat.findMany({
             where:{
                 roomId:roomId

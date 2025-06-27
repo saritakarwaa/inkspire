@@ -13,5 +13,5 @@ export const SignInSchema=zod.object({
 })
 
 export const CreateRoomSchema=zod.object({
-    name:zod.string().min(3).max(4)
+    name:zod.string().min(1)
 })

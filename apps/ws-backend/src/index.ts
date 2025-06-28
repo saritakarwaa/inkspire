@@ -46,10 +46,11 @@ wss.on('connection',function connection(ws,request){
     ws.on('message',async function message(data){ 
         let parsedData;
         if(typeof data!="string"){
-            parsedData=Number(JSON.parse(data.toString()))
+            parsedData=JSON.parse(data.toString())
         }
         else{
-            parsedData=JSON.parse(data)
+            console.error("Invalid JSON message received:", data);
+            return
         }
        if(parsedData.type==="join_room"){
         const user=users.find(x=>x.ws===ws) //find the user in the global users array
@@ -81,12 +82,12 @@ wss.on('connection',function connection(ws,request){
         try{
              await prismaClient.chat.create({
             data:{
-                roomId:roomId,message,userId
+                roomId,message,userId
             }
             })
             console.log("Chat saved:", message);
 
-            users.forEach((user)=>{
+            users.forEach(user=>{
                 if(user.rooms.includes(parsedData.roomId)){
                     user.ws.send(JSON.stringify({
                         type:"chat",

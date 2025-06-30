@@ -1,8 +1,7 @@
 "use client"
 import {Canvas} from "@/components/Canvas"
 import { WS_BACKEND } from "@/config"
-import { initDraw } from "@/draw"
-import {useRef,useEffect, useState} from "react"
+import {useEffect, useState} from "react"
 export function RoomCanvas({roomId}:{roomId:string}){
      const [socket,setSocket]=useState<WebSocket | null>(null)
 

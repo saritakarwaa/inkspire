@@ -14,10 +14,7 @@ type Shape={
     radius:number
 } | {
     type:"pencil"
-    startX:number
-    startY:number
-    endX:number
-    endY:number
+    points: { x: number; y: number }[];
 }
 export class Game{
     private canvas:HTMLCanvasElement
@@ -29,6 +26,7 @@ export class Game{
     private startX:number
     private startY:number
     private selectedTool:Tool="circle"
+    private currentPath:{x:number,y:number}[]=[]
 
     constructor(canvas:HTMLCanvasElement,roomId:string,socket:WebSocket){
         this.canvas=canvas
@@ -84,6 +82,13 @@ export class Game{
                 this.ctx.arc(shape.centerX,shape.centerY,Math.abs(shape.radius),0,Math.PI*2)
                 this.ctx.stroke()
                 this.ctx.closePath()
+            }else if(shape.type==="pencil"){
+                this.ctx.beginPath()
+                const [first,...rest]=shape.points;
+                this.ctx.moveTo(first.x,first.y)
+                rest.forEach(p=>this.ctx.lineTo(p.x,p.y))
+                this.ctx.stroke()
+                this.ctx.closePath()
             }
         })
     }
@@ -103,6 +108,10 @@ export class Game{
             const radius=Math.max(width,height)/2
             shape={type:"circle",radius:radius,centerX:this.startX+radius,centerY:this.startY+radius }    
         }
+        else if(this.selectedTool==="pencil"){
+            shape={type:"pencil",points:this.currentPath}
+            this.currentPath=[]
+        }
         if(!shape) return
         this.existingShapes.push(shape)
         this.socket.send(JSON.stringify({
@@ -115,6 +124,10 @@ export class Game{
         this.clicked=true
         this.startX=e.clientX
         this.startY=e.clientY
+
+        if(this.selectedTool==="pencil"){
+            this.currentPath=[{x:e.clientX,y:e.clientY}]
+        }
     }
     mouseMoveHandler=(e:any)=>{
         if(this.clicked){ 
@@ -134,7 +147,16 @@ export class Game{
                 this.ctx.arc(centerX,centerY,Math.abs(radius),0,Math.PI*2)
                 this.ctx.stroke()
                 this.ctx.closePath()
-            }   
+            } 
+            else if(selectedTool==="pencil"){
+                this.currentPath.push({x:e.clientX,y:e.clientY})
+                this.ctx.beginPath()
+                const [first,...rest]=this.currentPath;
+                this.ctx.moveTo(first.x,first.y)
+                rest.forEach(p=>this.ctx.lineTo(p.x,p.y))
+                this.ctx.stroke()
+                this.ctx.closePath()
+            }  
         }
     }
 

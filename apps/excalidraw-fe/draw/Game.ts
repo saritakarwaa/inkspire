@@ -27,6 +27,8 @@ export class Game{
     private startY:number
     private selectedTool:Tool="circle"
     private currentPath:{x:number,y:number}[]=[]
+    private undoStack:Shape[]=[]
+    private redoStack:Shape[]=[]
 
     constructor(canvas:HTMLCanvasElement,roomId:string,socket:WebSocket){
         this.canvas=canvas
@@ -114,12 +116,16 @@ export class Game{
         }
         if(!shape) return
         this.existingShapes.push(shape)
+        this.undoStack.push(shape)
+        this.redoStack=[]
         this.socket.send(JSON.stringify({
             type: "chat",
             message: JSON.stringify({ shape }),
             roomId:this.roomId
         }));
     }
+
+
     mouseDownHandler=(e:any)=>{
         this.clicked=true
         this.startX=e.clientX
@@ -165,5 +171,21 @@ export class Game{
         this.canvas.addEventListener("mousedown",this.mouseDownHandler)
         this.canvas.addEventListener("mouseup",this.mouseUpHandler)
         this.canvas.addEventListener("mousemove",this.mouseMoveHandler)
+    }
+
+    undo(){
+        if(this.existingShapes.length===0) return;
+        const shape=this.existingShapes.pop()!
+        this.undoStack.pop()
+        this.redoStack.push(shape)
+        this.clearCanvas()
+    }
+
+    redo(){
+        if(this.redoStack.length===0) return;
+        const shape=this.redoStack.pop()!
+        this.existingShapes.push(shape)
+        this.undoStack.push(shape)
+        this.clearCanvas()
     }
 }

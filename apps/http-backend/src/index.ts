@@ -8,10 +8,7 @@ import cors from "cors";
 const app=express()
 
 
-app.use(cors({
-  origin: "http://localhost:3000", 
-  credentials: true
-}));
+app.use(cors());
 app.use(express.json())
 app.post("/signup",async (req,res)=>{
     const parsedData=CreateUserSchema.safeParse(req.body)
@@ -131,4 +128,4 @@ app.get("/room/:slug",async(req,res)=>{
 
 
 
-app.listen(3001,()=> console.log("HTTP backend running on port 3001"))
+app.listen(5000,()=> console.log("HTTP backend running on port 5000"))

@@ -9,15 +9,6 @@ export async function getExistingShapes(roomId:string){
         console.warn("Expected messages to be an array. Got:", data);
         return [];
     }
-    // const shapes=data.map((x:{message:string}) =>{
-    //     try {
-    //   const messageData = JSON.parse(x.message);
-    //   return messageData.shape;
-    // } catch (err) {
-    //   console.error("Invalid shape JSON:", x.message);
-    //   return null;
-    // }
-    // }).filter(Boolean)
     const shapes = data
   .filter((x: any) => !x.deleted)
   .map((x: { message: string }) => {

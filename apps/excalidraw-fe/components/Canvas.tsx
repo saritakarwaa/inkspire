@@ -20,7 +20,7 @@ export function Canvas({roomId,socket}:{roomId:string,socket:WebSocket}){
                 g.destroy()
             }
         };
-    },[roomId,socket])
+    },[roomId])
 
     return <div style={{
         height:"100vh",

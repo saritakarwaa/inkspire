@@ -20,7 +20,7 @@ export function Canvas({roomId,socket}:{roomId:string,socket:WebSocket}){
                 g.destroy()
             }
         };
-    },[canvasRef])
+    },[roomId,socket])
 
     return <div style={{
         height:"100vh",
@@ -41,8 +41,8 @@ function Topbar({selectedTool,setSelectedTool,undo,redo}:{selectedTool:Tool,setS
             <IconButton activated={selectedTool==="pencil"} icon={<Pencil/>} onClick={()=>{setSelectedTool("pencil")}}></IconButton>
             <IconButton activated={selectedTool==="rect"}  icon={<RectangleHorizontalIcon/>} onClick={()=>{setSelectedTool("rect")}}></IconButton>
             <IconButton activated={selectedTool==="circle"}  icon={<Circle/>} onClick={()=>{setSelectedTool("circle")}}></IconButton>
-            <button  className="bg-white px-2 py-1 rounded"onClick={undo}><Undo2 /></button>
-            <button  className="bg-white px-2 py-1 rounded"onClick={undo}><Redo /></button>
+            <button  className="px-2 py-1 rounded"onClick={undo}><Undo /></button>
+            <button  className="px-2 py-1 rounded"onClick={redo}><Redo /></button>
         </div>
     </div>
 }

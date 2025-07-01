@@ -11,7 +11,7 @@ export function ChatRoomClient({
     const [currMsg,setCurrMsg]=useState("")
     useEffect(()=>{
         if(socket && !loading){
-            socket.send(JSON.stringify({
+            (JSON.stringify({
                 type:"join_room",
                 roomId:id
             }))
@@ -20,6 +20,7 @@ export function ChatRoomClient({
                 if(parsedData.type==="chat"){
                     setChats(c=>[...c,{message:parsedData.message}])
                 }
+                
             }
         }
         return()=>{

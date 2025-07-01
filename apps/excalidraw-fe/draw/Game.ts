@@ -1,8 +1,9 @@
 import { Tool } from "@/components/Canvas"
 import { getExistingShapes } from "./http"
+import { nanoid } from "nanoid";
 
-type Shape={
-    type:"rect"
+type Shape={id:string}&(|
+{    type:"rect"
     x:number
     y:number
     width:number
@@ -15,7 +16,8 @@ type Shape={
 } | {
     type:"pencil"
     points: { x: number; y: number }[];
-}
+})
+
 export class Game{
     private canvas:HTMLCanvasElement
     private ctx:CanvasRenderingContext2D
@@ -33,15 +35,15 @@ export class Game{
     constructor(canvas:HTMLCanvasElement,roomId:string,socket:WebSocket){
         this.canvas=canvas
         this.ctx=canvas.getContext("2d")!
-        this.existingShapes =[]
-        this.roomId=roomId
-        this.init()
-        this.initHandlers()
         this.socket=socket
-        this.initMouseHandlers()
+        this.roomId=roomId
+        this.existingShapes =[]
         this.clicked=false
         this.startX=0
         this.startY=0
+        this.init()
+        this.initHandlers()
+        this.initMouseHandlers()
     }
 
     destroy(){
@@ -64,11 +66,25 @@ export class Game{
         }
         this.socket.onmessage=(event)=>{
             const message=JSON.parse(event.data)
-            if(message.type==="chat"){
-                const parsedShape=JSON.parse(message.message)
-                this.existingShapes.push(parsedShape.shape)
-                this.clearCanvas()
+            if(message.type==="shape_add"){
+                this.existingShapes.push(message.shape)
             }
+            if(message.type==="shape_undo"){
+                console.log("Handling shape_undo for shapeId:", message.shapeId);
+                console.log("Current shapes before undo:", this.existingShapes);
+                this.existingShapes=this.existingShapes.filter(
+                    (s)=>s.id!==message.shapeId
+                )
+                console.log("Shapes after undo:", this.existingShapes);
+            }
+            if(message.type==="shape_redo"){
+                if (message.shape) {
+                    this.existingShapes.push(message.shape); 
+                } else {
+                    console.warn("Redo received without shape:", message);
+                }
+            }
+            this.clearCanvas()
         }
     }
 
@@ -103,26 +119,31 @@ export class Game{
        
         const selectedTool=this.selectedTool
         let shape:Shape | null=null
+        const shapeId=nanoid()
         if(selectedTool==="rect"){
-            shape={type:"rect",x:this.startX,y:this.startY,height,width}
+            shape={id:shapeId,type:"rect",x:this.startX,y:this.startY,height,width}
         }
         else if(selectedTool==="circle"){
             const radius=Math.max(width,height)/2
-            shape={type:"circle",radius:radius,centerX:this.startX+radius,centerY:this.startY+radius }    
+            shape={id:shapeId,type:"circle",radius:radius,centerX:this.startX+radius,centerY:this.startY+radius }    
         }
         else if(this.selectedTool==="pencil"){
-            shape={type:"pencil",points:this.currentPath}
+            shape={id:shapeId,type:"pencil",points:this.currentPath}
             this.currentPath=[]
         }
         if(!shape) return
         this.existingShapes.push(shape)
         this.undoStack.push(shape)
         this.redoStack=[]
-        this.socket.send(JSON.stringify({
-            type: "chat",
-            message: JSON.stringify({ shape }),
-            roomId:this.roomId
-        }));
+        if (this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: "shape_add",
+                shape,
+                roomId: this.roomId
+            }));
+        } else {
+            console.warn("WebSocket is not open, cannot send shape");
+        }
     }
 
 
@@ -176,16 +197,27 @@ export class Game{
     undo(){
         if(this.existingShapes.length===0) return;
         const shape=this.existingShapes.pop()!
-        this.undoStack.pop()
+        console.log("Undo clicked, shape removed:", shape);
         this.redoStack.push(shape)
-        this.clearCanvas()
+        if (this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+            type: "shape_undo",
+            roomId: this.roomId,
+            shapeId: shape.id,
+            }));
+        }
     }
 
     redo(){
         if(this.redoStack.length===0) return;
         const shape=this.redoStack.pop()!
-        this.existingShapes.push(shape)
-        this.undoStack.push(shape)
-        this.clearCanvas()
+        if (this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+            type: "shape_redo",
+            roomId: this.roomId,
+            shapeId: shape.id,
+            shape
+            }));
+        }
     }
 }

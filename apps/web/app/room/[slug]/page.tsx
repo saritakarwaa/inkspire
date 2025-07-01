@@ -4,7 +4,7 @@ import { ChatRoom} from "../../../components/ChatRoom"
 async function getRoomId(slug:string) {
     console.log(BACKEND_URL)
     try {
-        const token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjNmOTc1NC1iZjIxLTRlZmItODU1Ni1hNzE0ZTFlYzliYjMiLCJpYXQiOjE3NTA5MTk4MjV9.Lb2JQFEOtIgjb6hY-AS5vHeQeQi-AeqTYbvG4FxmSDw"
+        const token="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0NjE3ZGNlYi1lMjA5LTQ4YzAtYTkzZS1kZjc1OWExNWFkNTIiLCJpYXQiOjE3NTEzNDkzMTN9.8786Ux6YW7dl5Iz4WvDY01Lfrld3iOphCYPQqiHNpVs"
         console.log("Calling axios with:", `${BACKEND_URL}/room/${slug}`); 
         const response=await fetch(`${BACKEND_URL}/room/${slug}`, {
             method: "GET",

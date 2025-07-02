@@ -123,26 +123,6 @@ export class Game{
     }
 
     clearCanvas(){
-        // this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height)
-        // this.ctx.fillStyle="rgba(0,0,0)"
-        // this.existingShapes.map((shape)=>{
-        //     if(shape.type==="rect"){
-        //         this.ctx.strokeStyle="rgba(255,255,255)"
-        //         this.ctx.strokeRect(shape.x,shape.y,shape.width,shape.height)
-        //     }else if(shape.type==="circle"){
-        //         this.ctx.beginPath()
-        //         this.ctx.arc(shape.centerX,shape.centerY,Math.abs(shape.radius),0,Math.PI*2)
-        //         this.ctx.stroke()
-        //         this.ctx.closePath()
-        //     }else if(shape.type==="pencil"){
-        //         this.ctx.beginPath()
-        //         const [first,...rest]=shape.points;
-        //         this.ctx.moveTo(first.x,first.y)
-        //         rest.forEach(p=>this.ctx.lineTo(p.x,p.y))
-        //         this.ctx.stroke()
-        //         this.ctx.closePath()
-        //     }
-        // })
         this.ctx.setTransform(1,0,0,1,0,0)
         this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height)
         this.ctx.translate(this.offsetX,this.offsetY)
@@ -236,7 +216,7 @@ export class Game{
             const height = y - this.startY;
 
             this.clearCanvas()
-            this.ctx.strokeStyle="rgba(255,255,255)"
+            this.ctx.strokeStyle="black"
             const selectedTool=this.selectedTool
             if(selectedTool==="rect"){
                 this.ctx.strokeRect(this.startX,this.startY,width,height)

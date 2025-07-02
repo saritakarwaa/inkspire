@@ -26,7 +26,7 @@ export function Canvas({roomId,socket}:{roomId:string,socket:WebSocket}){
         height:"100vh",
         overflow:"hidden"
     }}> 
-        <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight}></canvas>
+        <canvas style={{ backgroundColor: "black" }} ref={canvasRef} width={window.innerWidth} height={window.innerHeight}></canvas>
         <Topbar selectedTool={selectedTool} setSelectedTool={setSelectedTool} undo={()=>game?.undo()} redo={()=>game?.redo()} />
     </div>
 }  

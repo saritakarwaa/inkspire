@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react";
 export function useWebSocket(roomId:string,WS_BACkEND:string){
     const [socket,setSocket]=useState<WebSocket | null>(null)
     const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-    const connect=()=>{
-        const ws=new WebSocket(`${WS_BACkEND}?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0NjE3ZGNlYi1lMjA5LTQ4YzAtYTkzZS1kZjc1OWExNWFkNTIiLCJpYXQiOjE3NTEzNDkzMTN9.8786Ux6YW7dl5Iz4WvDY01Lfrld3iOphCYPQqiHNpVs`)
+   
+    const connect=(token:string | null)=>{
+        const ws=new WebSocket(`${WS_BACkEND}?token=${token}`)
 
         ws.onopen=()=>{
             console.log("ws connected")
@@ -20,7 +21,7 @@ export function useWebSocket(roomId:string,WS_BACkEND:string){
         ws.onclose = () => {
             console.warn("[WS] Disconnected, attempting reconnect...");
             setSocket(null);
-            reconnectTimeout.current = setTimeout(connect, 2000); // Retry after 2s
+            //reconnectTimeout.current = setTimeout(connect, 2000); // Retry after 2s
         };
 
         ws.onerror = (err) => {
@@ -28,8 +29,13 @@ export function useWebSocket(roomId:string,WS_BACkEND:string){
             ws.close(); // Force close on error
         };
     }
-    useEffect(() => {
-        connect(); // Initial connection
+     useEffect(() => {
+        if (typeof window !== "undefined") {
+        const token = localStorage.getItem("token");
+        if (token) {
+            connect(token);
+        }
+        }
 
         return () => {
         if (reconnectTimeout.current) {

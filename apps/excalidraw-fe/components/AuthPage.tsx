@@ -24,7 +24,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
 
   const handleSubmit = async () => {
     setError("")
-    const endpoint=isSignin?"/signin":"/signup"
+    const endpoint=isSignin?"signin":"signup"
     const body = isSignin
       ? {
           username: formData.email,
@@ -36,7 +36,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
           name: formData.name,
         };
     try{
-        const res=await fetch(`${HTTP_BACKEND}${endpoint}`,{
+        const res=await fetch(`${HTTP_BACKEND}/${endpoint}`,{
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify(body)
@@ -48,7 +48,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
         }
         if(isSignin){
             localStorage.setItem("token",data.token)
-            router.push("/room")
+            router.push("/room/select")
         }
         else{
             router.push("/signin")

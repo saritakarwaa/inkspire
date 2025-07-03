@@ -12,22 +12,24 @@ import {
   Palette,
   Download,
   Share2,
+  Type
 } from "lucide-react";
 
-export type Tool = "circle" | "rect" | "pencil";
+export type Tool = "circle" | "rect" | "pencil" | "text";
 
 export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedTool, setSelectedTool] = useState<Tool>("pencil");
   const [game, setGame] = useState<Game>();
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     game?.setTool(selectedTool);
   }, [selectedTool, game]);
 
   useEffect(() => {
-    if (canvasRef.current) {
-      const g = new Game(canvasRef.current, roomId, socket);
+    if (canvasRef.current && containerRef.current) {
+      const g = new Game(canvasRef.current,containerRef.current, roomId, socket);
       setGame(g);
       return () => {
         g.destroy();
@@ -36,13 +38,15 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
   }, [roomId]);
 
   return (
-    <div className="h-screen overflow-hidden relative">
+    <div className="h-screen relative">
+      <div ref={containerRef} className="absolute inset-0">
       <canvas
         ref={canvasRef}
         width={window.innerWidth}
         height={window.innerHeight}
         style={{ backgroundColor: "white" }}
       />
+      </div>
       <Topbar
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
@@ -81,6 +85,11 @@ function Topbar({
           activated={selectedTool === "circle"}
           icon={<Circle className="w-5 h-5" />}
           onClick={() => setSelectedTool("circle")}
+        />
+        <IconButton
+          activated={selectedTool === "text"}
+          icon={<Type className="w-5 h-5" />}
+          onClick={() => setSelectedTool("text")}
         />
 
         <div className="w-px h-5 bg-gray-200 mx-1" />

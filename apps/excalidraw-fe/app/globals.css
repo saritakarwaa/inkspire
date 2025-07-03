@@ -130,6 +130,33 @@ body {
   }
 }
 
+textarea {
+  position: fixed !important;
+  z-index: 9999 !important;
+  background: white !important;
+  color: black !important;
+  border: 2px solid #333 !important;
+  padding: 8px !important;
+  font-size: 16px !important;
+  min-width: 200px !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+}
+textarea.debug {
+  border: 3px solid red !important;
+  background: yellow !important;
+}
+body {
+  overflow: visible !important;
+}
+/* Add this to your global CSS */
+.canvas-container {
+  pointer-events: none !important; /* Allow clicks to pass through to textarea */
+}
+
+.canvas-container canvas {
+  pointer-events: auto !important; /* But allow events on canvas itself */
+}
+
 @layer base {
   * {
     @apply border-border;

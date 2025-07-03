@@ -27,7 +27,7 @@ export default function SelectRoomPage() {
           "Content-Type": "application/json",
           Authorization: `${token}`,
         },
-        body: JSON.stringify({ room: roomCode.trim() }),
+        body: JSON.stringify({ name: roomCode.trim() }),
       });
        if (res.status === 411) {
         alert("Room already exists with this code.");

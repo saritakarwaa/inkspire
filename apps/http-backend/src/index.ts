@@ -1,7 +1,7 @@
 import express from "express"
 import jwt from "jsonwebtoken"
 import { JWTSECRET } from "@repo/backend-common/config"
-import { middleware } from "./middleware.js"
+import { middleware,AuthenticatedRequest } from "./middleware.js"
 import {CreateUserSchema,SignInSchema,CreateRoomSchema} from "@repo/common/types"
 import {prismaClient} from "@repo/db/client"
 import cors from "cors";
@@ -10,6 +10,8 @@ const app=express()
 
 app.use(cors());
 app.use(express.json())
+
+
 app.post("/signup",async (req,res)=>{
     const parsedData=CreateUserSchema.safeParse(req.body)
     if(!parsedData.success){
@@ -34,6 +36,9 @@ app.post("/signup",async (req,res)=>{
 })
 
 app.post("/signin",async (req,res)=>{
+    if (!JWTSECRET) {
+        throw new Error("JWTSECRET is not defined");
+    }
     const parsedData=SignInSchema.safeParse(req.body)
     if(!parsedData.success){
         res.json({message:"Incorrect inputs"});
@@ -55,6 +60,7 @@ app.post("/signin",async (req,res)=>{
 
 app.post("/room",middleware,async(req,res)=>{
     console.log("Incoming body:", req.body);
+    const { userId } = req as AuthenticatedRequest;
     const parsedData=CreateRoomSchema.safeParse(req.body)
     console.log("Zod errors:", parsedData);
     if(!parsedData.success){
@@ -62,8 +68,6 @@ app.post("/room",middleware,async(req,res)=>{
         res.json({message:"Incorrect inputs"});
         return;
     }
-    //@ts-ignore
-    const userId=req.userId
    try{
         const room=await prismaClient.room.create({
             data:{

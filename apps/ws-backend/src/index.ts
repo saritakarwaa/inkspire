@@ -174,6 +174,14 @@ wss.on('connection',function connection(ws,request){
 
             broadcast(roomId, { type: "shape_redo", shapeId,shape });
         }
+        if (parsedData.type === "shape_move") {
+            const { roomId, shapeId, newPosition } = parsedData;
+            broadcast(roomId, {
+                type: "shape_move",
+                shapeId,
+                newPosition
+            });
+        }
     })
 })
 //we allow the user to receive and send messages to multiple rooms instead of restricting to single room

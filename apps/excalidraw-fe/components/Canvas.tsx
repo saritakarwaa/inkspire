@@ -12,10 +12,11 @@ import {
   Palette,
   Download,
   Share2,
-  Type
+  Type,
+  MousePointer2
 } from "lucide-react";
 
-export type Tool = "circle" | "rect" | "pencil" | "text";
+export type Tool = "circle" | "rect" | "pencil" | "text" | "select";
 
 export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -90,6 +91,12 @@ function Topbar({
           activated={selectedTool === "text"}
           icon={<Type className="w-5 h-5" />}
           onClick={() => setSelectedTool("text")}
+        />
+
+         <IconButton
+          activated={selectedTool === "select"}
+          icon={<MousePointer2 className="w-5 h-5" />}
+          onClick={() => setSelectedTool("select")}
         />
 
         <div className="w-px h-5 bg-gray-200 mx-1" />

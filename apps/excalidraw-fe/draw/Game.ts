@@ -46,6 +46,10 @@ export class Game{
     private currentPath:{x:number,y:number}[]=[]
     private undoStack:Shape[]=[]
     private redoStack:Shape[]=[]
+    private selectedShape:Shape | null=null
+    private isDragging=false
+    private dragOffsetX=0
+    private dragOffsetY=0
 
     constructor(canvas:HTMLCanvasElement,private parent: HTMLElement,roomId:string,socket:WebSocket){
         this.canvas=canvas
@@ -91,7 +95,7 @@ export class Game{
         this.canvas.removeEventListener("wheel",     this.wheelZoom);
         this.canvas.removeEventListener("contextmenu", this.blockMenu);
     }
-    setTool(tool:"circle" | "pencil" | "rect" | "text"){
+    setTool(tool:"circle" | "pencil" | "rect" | "text" | "select"){
         this.selectedTool=tool
     }
     async init(){
@@ -124,6 +128,27 @@ export class Game{
                     console.warn("Redo received without shape:", message);
                 }
             }
+            else if (message.type === "shape_move") {
+            const shape = this.existingShapes.find(s => s.id === message.shapeId);
+            if (shape) {
+                if (shape.type === "rect" || shape.type === "text") {
+                    shape.x = message.newPosition.x;
+                    shape.y = message.newPosition.y;
+                }
+                else if (shape.type === "circle") {
+                    shape.centerX = message.newPosition.x;
+                    shape.centerY = message.newPosition.y;
+                }
+                else if (shape.type === "pencil") {
+                    const dx = message.newPosition.x - shape.points[0].x;
+                    const dy = message.newPosition.y - shape.points[0].y;
+                    for (const point of shape.points) {
+                        point.x += dx;
+                        point.y += dy;
+                    }
+                }
+            }
+        }
             this.clearCanvas()
         }
     }
@@ -139,6 +164,13 @@ export class Game{
     }
 
     drawShape(shape:Shape){
+        if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
+        this.ctx.strokeStyle = "blue";
+        this.ctx.lineWidth = 2;
+    } else {
+        this.ctx.strokeStyle = "black";
+        this.ctx.lineWidth = 1;
+    }
         if(shape.type==="rect"){
             this.ctx.strokeStyle = "black";
             this.ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
@@ -164,10 +196,26 @@ export class Game{
             this.ctx.textBaseline="top"
             this.ctx.fillText(shape.text,shape.x,shape.y)
         }
+        
     }
 
 
     mouseUpHandler=(e:MouseEvent)=>{
+        if (this.isDragging && this.selectedShape) {
+        this.isDragging = false;
+        
+        // Notify other clients about the move
+        if (this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: "shape_move",
+                shapeId: this.selectedShape.id,
+                newPosition: this.getShapePosition(this.selectedShape),
+                roomId: this.roomId
+            }));
+        }
+        
+        return;
+    }
         this.clicked=false
         const { x, y } = this.screenToWorld(e.clientX, e.clientY);
         const width = x - this.startX;
@@ -218,6 +266,30 @@ export class Game{
             this.createTextInput(e.clientX,e.clientY)
             return
         }
+        if (this.selectedTool === "select") {
+            this.selectedShape = this.getShapeAt(x, y);
+            if (this.selectedShape) {
+                this.isDragging = true;
+                if (this.selectedShape.type === "rect") {
+                    this.dragOffsetX = x - this.selectedShape.x;
+                    this.dragOffsetY = y - this.selectedShape.y;
+                }
+                else if (this.selectedShape.type === "circle") {
+                    this.dragOffsetX = x - this.selectedShape.centerX;
+                    this.dragOffsetY = y - this.selectedShape.centerY;
+                }
+                else if (this.selectedShape.type === "pencil") {
+                    // For pencil, use first point as reference
+                    this.dragOffsetX = x - this.selectedShape.points[0].x;
+                    this.dragOffsetY = y - this.selectedShape.points[0].y;
+                }
+                else if(this.selectedShape.type==="text"){
+                    this.dragOffsetX = x - this.selectedShape.x;
+                    this.dragOffsetY = y - this.selectedShape.y;
+                }
+                return;
+            }
+        }
         this.clicked=true
         this.startX=x
         this.startY=y
@@ -228,8 +300,33 @@ export class Game{
         
     }
     mouseMoveHandler=(e:MouseEvent)=>{
+        const { x, y } = this.screenToWorld(e.clientX, e.clientY);
+        if (this.isDragging && this.selectedShape) {
+        if (this.selectedShape.type === "rect") {
+            this.selectedShape.x = x - this.dragOffsetX;
+            this.selectedShape.y = y - this.dragOffsetY;
+        }
+        else if (this.selectedShape.type === "circle") {
+            this.selectedShape.centerX = x - this.dragOffsetX;
+            this.selectedShape.centerY = y - this.dragOffsetY;
+        }
+        else if (this.selectedShape.type === "pencil") {
+            const dx = x - this.dragOffsetX - this.selectedShape.points[0].x;
+            const dy = y - this.dragOffsetY - this.selectedShape.points[0].y;
+            for (const point of this.selectedShape.points) {
+                point.x += dx;
+                point.y += dy;
+            }
+        }
+        else if (this.selectedShape.type === "text") {
+            this.selectedShape.x = x - this.dragOffsetX;
+            this.selectedShape.y = y - this.dragOffsetY;
+        }
+        
+        this.clearCanvas();
+        return;
+    }
         if(this.clicked){ 
-            const { x, y } = this.screenToWorld(e.clientX, e.clientY);
             const width = x - this.startX;
             const height = y - this.startY;
 
@@ -274,20 +371,19 @@ export class Game{
         // this.canvas.addEventListener("mousemove",this.mouseMoveHandler)
     }
     panMouseDown=(e:MouseEvent)=>{
-        if (this.selectedTool === "text") {
-        // For text tool, always handle left click
-            if (e.button === 0) {
-                this.mouseDownHandler(e);
-                return;
-            }
+         // For text tool or select tool, always handle left click first
+        if ((this.selectedTool === "text" || this.selectedTool === "select") && e.button === 0) {
+            this.mouseDownHandler(e);
+            return;
         }
+        
         if (e.button === 0) {          // left‑click draws
-                this.mouseDownHandler(e);
-            } else if (e.button === 1 || e.button === 2) { // middle/right pan
-                this.isPanning = true;
-                this.lastPanX = e.clientX;
-                this.lastPanY = e.clientY;
-            }
+            this.mouseDownHandler(e);
+        } else if (e.button === 1 || e.button === 2) { // middle/right pan
+            this.isPanning = true;
+            this.lastPanX = e.clientX;
+            this.lastPanY = e.clientY;
+        }
     }
 
     panMouseUp=(e:MouseEvent)=>{
@@ -325,10 +421,10 @@ export class Game{
 
     wheelZoom=(e:any)=>{
          e.preventDefault();
-            const zoomAmount = -e.deltaY * 0.001;
-            this.scale *= 1 + zoomAmount;
-            this.scale = Math.max(0.2, Math.min(5, this.scale));
-            this.clearCanvas();
+        const zoomAmount = -e.deltaY * 0.001;
+        this.scale *= 1 + zoomAmount;
+        this.scale = Math.max(0.2, Math.min(5, this.scale));
+        this.clearCanvas();
     }
 
     blockMenu=(e:any)=>{e.preventDefault()}
@@ -441,5 +537,55 @@ export class Game{
         // Prevent clicks on textarea from propagating to canvas
         ta.addEventListener('mousedown', e => e.stopPropagation());
         ta.addEventListener('mouseup', e => e.stopPropagation());
+    }
+
+    private getShapeAt(x: number, y: number): Shape | null {
+    // We'll check shapes in reverse order (top to bottom in z-order)
+        for (let i = this.existingShapes.length - 1; i >= 0; i--) {
+            const shape = this.existingShapes[i];
+            
+            if (shape.type === "rect") {
+                if (x >= shape.x && x <= shape.x + shape.width &&
+                    y >= shape.y && y <= shape.y + shape.height) {
+                    return shape;
+                }
+            } 
+            else if (shape.type === "circle") {
+                const dx = x - shape.centerX;
+                const dy = y - shape.centerY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance <= shape.radius) {
+                    return shape;
+                }
+            }
+            else if (shape.type === "pencil") {
+                // Simple point-in-path check (could be more sophisticated)
+                for (const point of shape.points) {
+                    const dx = x - point.x;
+                    const dy = y - point.y;
+                    if (dx * dx + dy * dy < 100) { // 10px radius
+                        return shape;
+                    }
+                }
+            }
+            else if (shape.type === "text") {
+                // Approximate text bounding box
+                this.ctx.font = shape.font;
+                const metrics = this.ctx.measureText(shape.text);
+                if (x >= shape.x && x <= shape.x + metrics.width &&
+                    y >= shape.y && y <= shape.y + 20) { // Approx text height
+                    return shape;
+                }
+            }
+        }
+        return null;
+    }
+
+    private getShapePosition(shape: Shape): { x: number, y: number } {
+        if (shape.type === "rect") return { x: shape.x, y: shape.y };
+        if (shape.type === "circle") return { x: shape.centerX, y: shape.centerY };
+        if (shape.type === "pencil") return { x: shape.points[0].x, y: shape.points[0].y };
+        if (shape.type === "text") return { x: shape.x, y: shape.y };
+        return { x: 0, y: 0 };
     }
 }

@@ -23,6 +23,7 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
   const [selectedTool, setSelectedTool] = useState<Tool>("pencil");
   const [game, setGame] = useState<Game>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isExporting,setIsExporting]=useState(false)
 
   useEffect(() => {
     game?.setTool(selectedTool);
@@ -38,6 +39,19 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
     }
   }, [roomId]);
 
+   const handleExport = () => {
+    if (game && !isExporting) {
+      setIsExporting(true);
+      try {
+        game.exportToJPEG();
+      } catch (error) {
+        console.error("Export failed:", error);
+      } finally {
+        setIsExporting(false);
+      }
+    }
+  };
+
   return (
     <div className="h-screen relative">
       <div ref={containerRef} className="absolute inset-0">
@@ -48,11 +62,18 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
         style={{ backgroundColor: "white" }}
       />
       </div>
+      {isExporting && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center">
+          <div className="w-4 h-4 border-t-2 border-white rounded-full animate-spin mr-2"></div>
+          Exporting image...
+        </div>
+      )}
       <Topbar
         selectedTool={selectedTool}
         setSelectedTool={setSelectedTool}
         undo={() => game?.undo()}
         redo={() => game?.redo()}
+        onExport={handleExport}
       />
     </div>
   );
@@ -63,11 +84,13 @@ function Topbar({
   setSelectedTool,
   undo,
   redo,
+  onExport
 }: {
   selectedTool: Tool;
   setSelectedTool: (s: Tool) => void;
   undo: () => void;
   redo: () => void;
+  onExport:()=> void;
 }) {
   return (
     <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50">
@@ -105,11 +128,8 @@ function Topbar({
         <IconButton icon={<Redo className="w-5 h-5" />} onClick={redo} />
 
         <div className="w-px h-5 bg-gray-200 mx-1" />
-
-        <IconButton icon={<Palette className="w-5 h-5" />} onClick={() => {}} />
-        <IconButton icon={<Download className="w-5 h-5" />} onClick={() => {}} />
-        <IconButton icon={<Share2 className="w-5 h-5" />} onClick={() => {}} />
-      </div>
+          <IconButton icon={<Download className="w-5 h-5" />} onClick={onExport} />
+        </div>
     </div>
   );
 }

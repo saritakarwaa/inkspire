@@ -59,14 +59,6 @@ wss.on('connection',function connection(ws,request){
     })
     
     ws.on('message',async function message(data){ 
-        // let parsedData;
-        // if(typeof data!="string"){
-        //     parsedData=JSON.parse(data.toString())
-        // }
-        // else{
-        //     console.error("Invalid JSON message received:", data);
-        //     return
-        // }
         let parsedData: any;
         try {
             parsedData = JSON.parse(typeof data === "string" ? data : data.toString());
@@ -185,7 +177,6 @@ wss.on('connection',function connection(ws,request){
     })
 })
 //we allow the user to receive and send messages to multiple rooms instead of restricting to single room
-
 //State manangement on backend
 // -the http backend we created was stateless
 // the websocker server is stateful. some in memory variable you have to maintain for every user 

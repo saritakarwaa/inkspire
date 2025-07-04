@@ -87,7 +87,7 @@ app.get("/chats/:roomId",async(req,res)=>{
     }
     try{
         const messages=await prismaClient.chat.findMany({
-            where: { roomId, deleted: false },    // <‑‑ filter here
+            where: { roomId, deleted: false },  
             orderBy: { id: "asc" },
         });
         res.json({messages})

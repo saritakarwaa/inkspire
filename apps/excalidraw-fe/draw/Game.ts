@@ -85,10 +85,6 @@ export class Game{
 
 
     destroy(){
-        // this.canvas.removeEventListener("mousedown",this.mouseDownHandler)
-        // this.canvas.removeEventListener("mouseup",this.mouseUpHandler)
-        // this.canvas.removeEventListener("mousemove",this.mouseMoveHandler)
-
         this.canvas.removeEventListener("mousedown", this.panMouseDown);
         this.canvas.removeEventListener("mouseup",   this.panMouseUp);
         this.canvas.removeEventListener("mousemove", this.panMouseMove);
@@ -163,38 +159,38 @@ export class Game{
         }
     }
 
-    drawShape(shape:Shape){
+    drawShape(shape:Shape,ctx: CanvasRenderingContext2D = this.ctx){
         if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
-        this.ctx.strokeStyle = "blue";
-        this.ctx.lineWidth = 2;
+        ctx.strokeStyle = "blue";
+        ctx.lineWidth = 2;
     } else {
-        this.ctx.strokeStyle = "black";
-        this.ctx.lineWidth = 1;
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 1;
     }
         if(shape.type==="rect"){
-            this.ctx.strokeStyle = "black";
-            this.ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+            ctx.strokeStyle = "black";
+            ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
         }
         else if(shape.type=="circle"){
-            this.ctx.beginPath();
-            this.ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, Math.PI * 2);
-            this.ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, Math.PI * 2);
+            ctx.stroke();
         }
         else if(shape.type==="pencil"){
             if (!shape.points || shape.points.length === 0) return;
-            this.ctx.beginPath();
+            ctx.beginPath();
             const [first, ...rest] = shape.points;
             if (!first) return; 
-            this.ctx.moveTo(first.x, first.y);
-            for (const pt of rest) this.ctx.lineTo(pt.x, pt.y);
-            this.ctx.stroke();
-            this.ctx.closePath()
+            ctx.moveTo(first.x, first.y);
+            for (const pt of rest) ctx.lineTo(pt.x, pt.y);
+            ctx.stroke();
+            ctx.closePath()
         }
         else if(shape.type==="text"){
-            this.ctx.fillStyle="black"
-            this.ctx.font="16px Arial"
-            this.ctx.textBaseline="top"
-            this.ctx.fillText(shape.text,shape.x,shape.y)
+            ctx.fillStyle="black"
+            ctx.font="16px Arial"
+            ctx.textBaseline="top"
+            ctx.fillText(shape.text,shape.x,shape.y)
         }
         
     }
@@ -297,8 +293,8 @@ export class Game{
         if(this.selectedTool==="pencil"){
             this.currentPath=[{x,y}]
         }
-        
     }
+
     mouseMoveHandler=(e:MouseEvent)=>{
         const { x, y } = this.screenToWorld(e.clientX, e.clientY);
         if (this.isDragging && this.selectedShape) {
@@ -365,10 +361,6 @@ export class Game{
         this.canvas.addEventListener("wheel",     this.wheelZoom, { passive: false });
         // Prevent context menu on right-click
         this.canvas.addEventListener("contextmenu",this.blockMenu);
-
-        // this.canvas.addEventListener("mousedown",this.mouseDownHandler)
-        // this.canvas.addEventListener("mouseup",this.mouseUpHandler)
-        // this.canvas.addEventListener("mousemove",this.mouseMoveHandler)
     }
     panMouseDown=(e:MouseEvent)=>{
          // For text tool or select tool, always handle left click first
@@ -376,7 +368,6 @@ export class Game{
             this.mouseDownHandler(e);
             return;
         }
-        
         if (e.button === 0) {          // left‑click draws
             this.mouseDownHandler(e);
         } else if (e.button === 1 || e.button === 2) { // middle/right pan
@@ -388,7 +379,7 @@ export class Game{
 
     panMouseUp=(e:MouseEvent)=>{
         if (e.button === 0) this.mouseUpHandler(e);
-            this.isPanning = false;
+        this.isPanning = false;
     }
 
     panMouseMove=(e:MouseEvent)=>{
@@ -401,8 +392,8 @@ export class Game{
                 this.lastPanY = e.clientY;
                 this.clearCanvas();
                 return;
-            }
-            this.mouseMoveHandler(e)
+        }
+        this.mouseMoveHandler(e)
     }
 
     undo(){
@@ -588,4 +579,77 @@ export class Game{
         if (shape.type === "text") return { x: shape.x, y: shape.y };
         return { x: 0, y: 0 };
     }
+
+    exportToJPEG() {
+    // Create a temporary canvas for high-quality export
+    const exportCanvas = document.createElement('canvas');
+    const exportCtx = exportCanvas.getContext('2d');
+    
+    if (!exportCtx) {
+        console.error('Failed to create export canvas context');
+        return;
+    }
+    
+    // Set export dimensions (higher resolution)
+    const scaleFactor = 2; // For higher quality
+    exportCanvas.width = this.canvas.width * scaleFactor;
+    exportCanvas.height = this.canvas.height * scaleFactor;
+    
+    // Fill background (since original canvas might be transparent)
+    exportCtx.fillStyle = 'white';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    
+    // Apply the same transformations but scaled up
+    exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
+    exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
+    
+    // IMPORTANT: Draw all shapes in the correct order
+    for (const shape of this.existingShapes) {
+        // Create a copy of the shape to avoid modifying the original
+        const shapeCopy = {...shape};
+        
+        // Draw the shape on the export canvas
+        if (shapeCopy.type === "rect") {
+        exportCtx.strokeStyle = "black";
+        exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
+        }
+        else if (shapeCopy.type === "circle") {
+        exportCtx.beginPath();
+        exportCtx.arc(shapeCopy.centerX, shapeCopy.centerY, shapeCopy.radius, 0, Math.PI * 2);
+        exportCtx.stroke();
+        }
+        else if (shapeCopy.type === "pencil") {
+        if (!shapeCopy.points || shapeCopy.points.length === 0) continue;
+        exportCtx.beginPath();
+        const [first, ...rest] = shapeCopy.points;
+        if (!first) continue; 
+        exportCtx.moveTo(first.x, first.y);
+        for (const pt of rest) exportCtx.lineTo(pt.x, pt.y);
+        exportCtx.stroke();
+        exportCtx.closePath();
+        }
+        else if (shapeCopy.type === "text") {
+        exportCtx.fillStyle = "black";
+        exportCtx.font = "16px Arial";
+        exportCtx.textBaseline = "top";
+        exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
+        }
+    }
+    
+    // Create download link
+    const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = `Inskpire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
+    
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up after a short delay
+    setTimeout(() => {
+        document.body.removeChild(link);
+    }, 100);
+    }
+    
 }

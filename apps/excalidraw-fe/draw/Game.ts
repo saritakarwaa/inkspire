@@ -198,20 +198,20 @@ export class Game{
 
     mouseUpHandler=(e:MouseEvent)=>{
         if (this.isDragging && this.selectedShape) {
-        this.isDragging = false;
-        
-        // Notify other clients about the move
-        if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: "shape_move",
-                shapeId: this.selectedShape.id,
-                newPosition: this.getShapePosition(this.selectedShape),
-                roomId: this.roomId
-            }));
+            this.isDragging = false;
+            
+            // Notify other clients about the move
+            if (this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({
+                    type: "shape_move",
+                    shapeId: this.selectedShape.id,
+                    newPosition: this.getShapePosition(this.selectedShape),
+                    roomId: this.roomId
+                }));
+            }
+            
+            return;
         }
-        
-        return;
-    }
         this.clicked=false
         const { x, y } = this.screenToWorld(e.clientX, e.clientY);
         const width = x - this.startX;
@@ -256,7 +256,6 @@ export class Game{
 
 
     mouseDownHandler=(e:MouseEvent)=>{
-       
         const {x,y}=this.screenToWorld(e.clientX,e.clientY)
         if(this.selectedTool==="text"){
             this.createTextInput(e.clientX,e.clientY)
@@ -298,30 +297,30 @@ export class Game{
     mouseMoveHandler=(e:MouseEvent)=>{
         const { x, y } = this.screenToWorld(e.clientX, e.clientY);
         if (this.isDragging && this.selectedShape) {
-        if (this.selectedShape.type === "rect") {
-            this.selectedShape.x = x - this.dragOffsetX;
-            this.selectedShape.y = y - this.dragOffsetY;
-        }
-        else if (this.selectedShape.type === "circle") {
-            this.selectedShape.centerX = x - this.dragOffsetX;
-            this.selectedShape.centerY = y - this.dragOffsetY;
-        }
-        else if (this.selectedShape.type === "pencil") {
-            const dx = x - this.dragOffsetX - this.selectedShape.points[0].x;
-            const dy = y - this.dragOffsetY - this.selectedShape.points[0].y;
-            for (const point of this.selectedShape.points) {
-                point.x += dx;
-                point.y += dy;
+            if (this.selectedShape.type === "rect") {
+                this.selectedShape.x = x - this.dragOffsetX;
+                this.selectedShape.y = y - this.dragOffsetY;
             }
+            else if (this.selectedShape.type === "circle") {
+                this.selectedShape.centerX = x - this.dragOffsetX;
+                this.selectedShape.centerY = y - this.dragOffsetY;
+            }
+            else if (this.selectedShape.type === "pencil") {
+                const dx = x - this.dragOffsetX - this.selectedShape.points[0].x;
+                const dy = y - this.dragOffsetY - this.selectedShape.points[0].y;
+                for (const point of this.selectedShape.points) {
+                    point.x += dx;
+                    point.y += dy;
+                }
+            }
+            else if (this.selectedShape.type === "text") {
+                this.selectedShape.x = x - this.dragOffsetX;
+                this.selectedShape.y = y - this.dragOffsetY;
+            }
+            
+            this.clearCanvas();
+            return;
         }
-        else if (this.selectedShape.type === "text") {
-            this.selectedShape.x = x - this.dragOffsetX;
-            this.selectedShape.y = y - this.dragOffsetY;
-        }
-        
-        this.clearCanvas();
-        return;
-    }
         if(this.clicked){ 
             const width = x - this.startX;
             const height = y - this.startY;
@@ -384,14 +383,14 @@ export class Game{
 
     panMouseMove=(e:MouseEvent)=>{
         if (this.isPanning) {
-                const dx = e.clientX - this.lastPanX;
-                const dy = e.clientY - this.lastPanY;
-                this.offsetX += dx;
-                this.offsetY += dy;
-                this.lastPanX = e.clientX;
-                this.lastPanY = e.clientY;
-                this.clearCanvas();
-                return;
+            const dx = e.clientX - this.lastPanX;
+            const dy = e.clientY - this.lastPanY;
+            this.offsetX += dx;
+            this.offsetY += dy;
+            this.lastPanX = e.clientX;
+            this.lastPanY = e.clientY;
+            this.clearCanvas();
+            return;
         }
         this.mouseMoveHandler(e)
     }
@@ -403,15 +402,15 @@ export class Game{
         this.redoStack.push(shape)
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
-            type: "shape_undo",
-            roomId: this.roomId,
-            shapeId: shape.id,
+                type: "shape_undo",
+                roomId: this.roomId,
+                shapeId: shape.id,
             }));
         }
     }
 
     wheelZoom=(e:any)=>{
-         e.preventDefault();
+        e.preventDefault();
         const zoomAmount = -e.deltaY * 0.001;
         this.scale *= 1 + zoomAmount;
         this.scale = Math.max(0.2, Math.min(5, this.scale));
@@ -434,14 +433,10 @@ export class Game{
     }
 
     private createTextInput(screenX: number, screenY: number) {
-        console.log('Creating text input at:', screenX, screenY);
-        
         // Create textarea element
         const ta = document.createElement('textarea');
-        
         // Set initial content to ensure it has size
         ta.value = 'Text here';
-        
         // Add debug styles to make it highly visible
         Object.assign(ta.style, {
             position: 'fixed',
@@ -461,7 +456,6 @@ export class Game{
             pointerEvents: 'auto',
             display: 'block', // Ensure it's visible
         });
-
         // Create a container to ensure proper rendering
         const container = document.createElement('div');
         Object.assign(container.style, {
@@ -471,61 +465,66 @@ export class Game{
             zIndex: '2147483647',
             pointerEvents: 'none',
         });
-        
         container.appendChild(ta);
         document.body.appendChild(container);
         console.log('Textarea container appended to body');
-
         // Add a slight delay before focusing to prevent immediate blur
         setTimeout(() => {
             ta.focus();
             ta.select();
             console.log('Textarea focused');
         }, 10);
-
+        let committed=false
         const commit = () => {
+            if (committed) return;
+            committed=true
             console.log('Committing text:', ta.value);
             const txt = ta.value.trim();
             if (txt) {
-            const world = this.screenToWorld(screenX, screenY);
-            const shape: Shape = {
-                id: nanoid(),
-                type: "text",
-                x: world.x,
-                y: world.y,
-                text: txt,
-                font: "16px Arial"
-            };
-
-            this.existingShapes.push(shape);
-            this.undoStack.push(shape);
-            this.redoStack = [];
-            this.clearCanvas();
-
-            if (this.socket.readyState === WebSocket.OPEN) {
-                this.socket.send(JSON.stringify({
-                type: "shape_add",
-                roomId: this.roomId,
-                shape,
-                }));
+                const world = this.screenToWorld(screenX, screenY);
+                const shape: Shape = {
+                    id: nanoid(),
+                    type: "text",
+                    x: world.x,
+                    y: world.y,
+                    text: txt,
+                    font: "16px Arial"
+                };
+                this.existingShapes.push(shape);
+                this.undoStack.push(shape);
+                this.redoStack = [];
+                this.clearCanvas();
+                if (this.socket.readyState === WebSocket.OPEN) {
+                    this.socket.send(JSON.stringify({
+                    type: "shape_add",
+                    roomId: this.roomId,
+                    shape,
+                    }));
+                }
             }
-            }
-            container.remove();
+            if(container.parentNode) container.remove();
+            ta.removeEventListener('blur', commit);
+            ta.removeEventListener('keydown', handleKeydown);
         };
-
-        // Add a delay before attaching blur handler
-        setTimeout(() => {
-            ta.addEventListener('blur', commit);
-        }, 20);
-
-        ta.addEventListener('keydown', (e) => {
+        const handleKeydown = (e: KeyboardEvent) => {
             if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            commit();
+                e.preventDefault();
+                commit();
             }
-        });
-        
-        // Prevent clicks on textarea from propagating to canvas
+        };
+        ta.addEventListener('blur', commit);
+        ta.addEventListener('keydown', handleKeydown);
+        // // Add a delay before attaching blur handler
+        // setTimeout(() => {
+        //     ta.addEventListener('blur', commit);
+        // }, 20);
+        // ta.addEventListener('keydown', (e) => {
+        //     if (e.key === 'Enter' && !e.shiftKey) {
+        //     e.preventDefault();
+        //     commit();
+        //     }
+        // });
+        // // Prevent clicks on textarea from propagating to canvas
         ta.addEventListener('mousedown', e => e.stopPropagation());
         ta.addEventListener('mouseup', e => e.stopPropagation());
     }
@@ -534,7 +533,6 @@ export class Game{
     // We'll check shapes in reverse order (top to bottom in z-order)
         for (let i = this.existingShapes.length - 1; i >= 0; i--) {
             const shape = this.existingShapes[i];
-            
             if (shape.type === "rect") {
                 if (x >= shape.x && x <= shape.x + shape.width &&
                     y >= shape.y && y <= shape.y + shape.height) {
@@ -581,75 +579,65 @@ export class Game{
     }
 
     exportToJPEG() {
-    // Create a temporary canvas for high-quality export
-    const exportCanvas = document.createElement('canvas');
-    const exportCtx = exportCanvas.getContext('2d');
-    
-    if (!exportCtx) {
-        console.error('Failed to create export canvas context');
-        return;
-    }
-    
-    // Set export dimensions (higher resolution)
-    const scaleFactor = 2; // For higher quality
-    exportCanvas.width = this.canvas.width * scaleFactor;
-    exportCanvas.height = this.canvas.height * scaleFactor;
-    
-    // Fill background (since original canvas might be transparent)
-    exportCtx.fillStyle = 'white';
-    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-    
-    // Apply the same transformations but scaled up
-    exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
-    exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
-    
-    // IMPORTANT: Draw all shapes in the correct order
-    for (const shape of this.existingShapes) {
-        // Create a copy of the shape to avoid modifying the original
-        const shapeCopy = {...shape};
-        
-        // Draw the shape on the export canvas
-        if (shapeCopy.type === "rect") {
-        exportCtx.strokeStyle = "black";
-        exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
+        // Create a temporary canvas for high-quality export
+        const exportCanvas = document.createElement('canvas');
+        const exportCtx = exportCanvas.getContext('2d');
+        if (!exportCtx) {
+            console.error('Failed to create export canvas context');
+            return;
         }
-        else if (shapeCopy.type === "circle") {
-        exportCtx.beginPath();
-        exportCtx.arc(shapeCopy.centerX, shapeCopy.centerY, shapeCopy.radius, 0, Math.PI * 2);
-        exportCtx.stroke();
+        // Set export dimensions (higher resolution)
+        const scaleFactor = 2; // For higher quality
+        exportCanvas.width = this.canvas.width * scaleFactor;
+        exportCanvas.height = this.canvas.height * scaleFactor;
+        // Fill background (since original canvas might be transparent)
+        exportCtx.fillStyle = 'white';
+        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        // Apply the same transformations but scaled up
+        exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
+        exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
+        // IMPORTANT: Draw all shapes in the correct order
+        for (const shape of this.existingShapes) {
+            // Create a copy of the shape to avoid modifying the original
+            const shapeCopy = {...shape};
+            // Draw the shape on the export canvas
+            if (shapeCopy.type === "rect") {
+            exportCtx.strokeStyle = "black";
+            exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
+            }
+            else if (shapeCopy.type === "circle") {
+            exportCtx.beginPath();
+            exportCtx.arc(shapeCopy.centerX, shapeCopy.centerY, shapeCopy.radius, 0, Math.PI * 2);
+            exportCtx.stroke();
+            }
+            else if (shapeCopy.type === "pencil") {
+            if (!shapeCopy.points || shapeCopy.points.length === 0) continue;
+            exportCtx.beginPath();
+            const [first, ...rest] = shapeCopy.points;
+            if (!first) continue; 
+            exportCtx.moveTo(first.x, first.y);
+            for (const pt of rest) exportCtx.lineTo(pt.x, pt.y);
+            exportCtx.stroke();
+            exportCtx.closePath();
+            }
+            else if (shapeCopy.type === "text") {
+            exportCtx.fillStyle = "black";
+            exportCtx.font = "16px Arial";
+            exportCtx.textBaseline = "top";
+            exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
+            }
         }
-        else if (shapeCopy.type === "pencil") {
-        if (!shapeCopy.points || shapeCopy.points.length === 0) continue;
-        exportCtx.beginPath();
-        const [first, ...rest] = shapeCopy.points;
-        if (!first) continue; 
-        exportCtx.moveTo(first.x, first.y);
-        for (const pt of rest) exportCtx.lineTo(pt.x, pt.y);
-        exportCtx.stroke();
-        exportCtx.closePath();
-        }
-        else if (shapeCopy.type === "text") {
-        exportCtx.fillStyle = "black";
-        exportCtx.font = "16px Arial";
-        exportCtx.textBaseline = "top";
-        exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
-        }
-    }
-    
-    // Create download link
-    const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
-    const link = document.createElement('a');
-    link.href = dataURL;
-    link.download = `Inskpire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
-    
-    // Trigger download
-    document.body.appendChild(link);
-    link.click();
-    
-    // Clean up after a short delay
-    setTimeout(() => {
-        document.body.removeChild(link);
-    }, 100);
-    }
-    
+        // Create download link
+        const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = `Inskpire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
+        // Trigger download
+        document.body.appendChild(link);
+        link.click();
+        // Clean up after a short delay
+        setTimeout(() => {
+            document.body.removeChild(link);
+        }, 100);
+    }    
 }

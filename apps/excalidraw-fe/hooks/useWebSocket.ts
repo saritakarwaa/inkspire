@@ -43,8 +43,7 @@ export function useWebSocket(roomId:string,WS_BACkEND:string){
         }
         socket?.close();
         };
-    }, [roomId]);
+    }, [roomId,socket]);
 
   return socket;
-
 }

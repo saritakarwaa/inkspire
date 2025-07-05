@@ -25,7 +25,7 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
 
   useEffect(() => {
     game?.setTool(selectedTool);
-  }, [selectedTool, game]);
+  }, [selectedTool, game,socket]);
 
   useEffect(() => {
     if (canvasRef.current && containerRef.current) {

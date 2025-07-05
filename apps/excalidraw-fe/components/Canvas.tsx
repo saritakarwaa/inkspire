@@ -22,10 +22,11 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
   const [game, setGame] = useState<Game>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isExporting,setIsExporting]=useState(false)
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     game?.setTool(selectedTool);
-  }, [selectedTool, game,socket]);
+  }, [selectedTool, game]);
 
   useEffect(() => {
     if (canvasRef.current && containerRef.current) {
@@ -36,6 +37,25 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
       };
     }
   }, [roomId,socket]);
+  
+
+  useEffect(() => {
+    // Initialize dimensions after mount
+    setDimensions({ 
+      width: window.innerWidth, 
+      height: window.innerHeight 
+    });
+    
+    const handleResize = () => {
+      setDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
    const handleExport = () => {
     if (game && !isExporting) {
@@ -55,8 +75,8 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
       <div ref={containerRef} className="absolute inset-0">
       <canvas
         ref={canvasRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
+        width={dimensions.width}
+        height={dimensions.height}
         style={{ backgroundColor: "white" }}
       />
       </div>

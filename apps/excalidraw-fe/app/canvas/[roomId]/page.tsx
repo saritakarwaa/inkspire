@@ -5,8 +5,7 @@ interface PageProps{
         roomId:string
     }
 }
-export default function Canvas({params}:PageProps){
-    const {roomId} =params
-    console.log(roomId)
-   return <RoomCanvas roomId={roomId} />
+export default function Page({ params }: PageProps) {
+  return <RoomCanvas roomId={params.roomId} />
 }
+

@@ -3,7 +3,12 @@ import {Canvas} from "@/components/Canvas"
 import { WS_BACKEND } from "@/config"
 import { useWebSocket } from "@/hooks/useWebSocket"
 
-export function RoomCanvas({roomId}:{roomId:string}){
+interface RoomCanvasProps {
+  roomId: string;
+}
+
+
+export function RoomCanvas({roomId}:RoomCanvasProps){
      const socket=useWebSocket(roomId,WS_BACKEND)
     if(!socket){
         return <div>Connecting to server...</div>

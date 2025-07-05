@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -b",
-    "postbuild": "prisma generate",
+    "postbuild": "pnpm --filter @repo/db exec prisma generate",
     "start": "node ./dist/index.js",
     "dev": "pnpm run build && pnpm run start"
   },

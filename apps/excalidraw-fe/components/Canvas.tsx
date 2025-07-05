@@ -9,9 +9,7 @@ import {
   RectangleHorizontal,
   Redo,
   Undo,
-  Palette,
   Download,
-  Share2,
   Type,
   MousePointer2
 } from "lucide-react";

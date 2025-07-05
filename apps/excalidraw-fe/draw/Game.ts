@@ -514,16 +514,6 @@ export class Game{
         };
         ta.addEventListener('blur', commit);
         ta.addEventListener('keydown', handleKeydown);
-        // // Add a delay before attaching blur handler
-        // setTimeout(() => {
-        //     ta.addEventListener('blur', commit);
-        // }, 20);
-        // ta.addEventListener('keydown', (e) => {
-        //     if (e.key === 'Enter' && !e.shiftKey) {
-        //     e.preventDefault();
-        //     commit();
-        //     }
-        // });
         // // Prevent clicks on textarea from propagating to canvas
         ta.addEventListener('mousedown', e => e.stopPropagation());
         ta.addEventListener('mouseup', e => e.stopPropagation());

@@ -35,7 +35,7 @@ export function Canvas({ roomId, socket }: { roomId: string; socket: WebSocket }
         g.destroy();
       };
     }
-  }, [roomId]);
+  }, [roomId,socket]);
 
    const handleExport = () => {
     if (game && !isExporting) {

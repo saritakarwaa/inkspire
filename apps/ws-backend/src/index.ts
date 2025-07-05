@@ -2,7 +2,8 @@ import {WebSocketServer} from "ws";
 import jwt from "jsonwebtoken"
 import { JWTSECRET } from "@repo/backend-common/config";
 import { WebSocket } from "ws";
-const wss=new WebSocketServer({port:8080})
+const port = Number(process.env.PORT) || 8080;
+const wss = new WebSocketServer({ port });
 import {prismaClient} from "@repo/db/client"
 
 //ugly state management using a global variable

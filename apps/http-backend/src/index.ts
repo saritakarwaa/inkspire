@@ -8,7 +8,7 @@ import cors from "cors";
 const app=express()
 
 
-const allowedOrigins = ["http://localhost:3000", "inkspire-ictyi6z0k-saritas-projects-d0d5be83.vercel.app"];
+const allowedOrigins = ["http://localhost:3000", "https://inkspire-d2jd6a115-saritas-projects-d0d5be83.vercel.app"];
 
 app.use(cors({
   origin: function (origin, callback) {

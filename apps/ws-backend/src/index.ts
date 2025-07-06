@@ -2,9 +2,28 @@ import {WebSocketServer} from "ws";
 import jwt from "jsonwebtoken"
 import { JWTSECRET } from "@repo/backend-common/config";
 import { WebSocket } from "ws";
-const port = Number(process.env.PORT) || 8080;
-const wss = new WebSocketServer({ port });
 import {prismaClient} from "@repo/db/client"
+import http from 'http'
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200);
+    res.end('OK');
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+const wss = new WebSocketServer({ server }); 
+const port = Number(process.env.PORT) || 8080;
+server.listen(port, () => {
+  console.log(`WebSocket server running on port ${port}`);
+});
+
+wss.on('headers', (headers) => {
+  headers.push('Access-Control-Allow-Origin:https://inkspire-gamma.vercel.app');
+  headers.push('Access-Control-Allow-Credentials: true');
+});
 
 //ugly state management using a global variable
 interface User{

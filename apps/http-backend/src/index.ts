@@ -8,7 +8,15 @@ import cors from "cors";
 const app=express()
 
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://inkspire-d2jd6a115-saritas-projects-d0d5be83.vercel.app', // Your Vercel frontend
+    'http://localhost:3000' // For local testing
+  ],
+  credentials: true, // If using cookies/auth headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
+}));
+app.options('*', cors());
 app.use(express.json())
 const PORT=process.env.PORT || 5000
 

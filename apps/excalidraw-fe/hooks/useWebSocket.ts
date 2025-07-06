@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-export function useWebSocket(roomId:string,WS_BACkEND:string){
+export function useWebSocket(roomId:string,WS_BACKEND:string){
     const [socket,setSocket]=useState<WebSocket | null>(null)
     const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
     const isMounted=useRef(false)
    
     const connect=(token:string | null)=>{
-        const ws=new WebSocket(`${WS_BACkEND}?token=${token}`)
+        const ws=new WebSocket(`${WS_BACKEND}?token=${token}`)
 
         ws.onopen=()=>{
             console.log("ws connected")

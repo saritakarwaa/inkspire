@@ -8,15 +8,19 @@ import cors from "cors";
 const app=express()
 
 
+const allowedOrigins = ["http://localhost:3000", "inkspire-ictyi6z0k-saritas-projects-d0d5be83.vercel.app"];
+
 app.use(cors({
-  origin: [
-    'https://inkspire-d2jd6a115-saritas-projects-d0d5be83.vercel.app', // Your Vercel frontend
-    'http://localhost:3000' // For local testing
-  ],
-  credentials: true, // If using cookies/auth headers
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allowed HTTP methods
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true
 }));
-app.options('*', cors());
+
 app.use(express.json())
 const PORT=process.env.PORT || 5000
 

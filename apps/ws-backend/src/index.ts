@@ -21,10 +21,10 @@ server.listen(port, () => {
 });
 
 wss.on('headers', (headers) => {
-  headers.push('Access-Control-Allow-Origin: https://inkspire-gamma.vercel.app');
-  headers.push('Access-Control-Allow-Credentials: true');
+  // Allow any origin to upgrade—Render will still TLS‑terminate for you.
+  headers.push('Access-Control-Allow-Origin: *');
+  // (You can remove the credentials header if you’re not using cookies here.)
 });
-
 //ugly state management using a global variable
 interface User{
     ws:WebSocket

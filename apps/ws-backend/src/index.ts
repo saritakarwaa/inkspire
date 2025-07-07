@@ -21,7 +21,7 @@ server.listen(port, () => {
 });
 
 wss.on('headers', (headers) => {
-  headers.push('Access-Control-Allow-Origin:https://inkspire-gamma.vercel.app');
+  headers.push('Access-Control-Allow-Origin: https://inkspire-gamma.vercel.app');
   headers.push('Access-Control-Allow-Credentials: true');
 });
 
@@ -44,6 +44,7 @@ function checkUser(token:string):string | null{
         return decoded.userId;
     }
     catch(e) {
+        console.error("Token verification failed:", e);
         return null;
     }
 }

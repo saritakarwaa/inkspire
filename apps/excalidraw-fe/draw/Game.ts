@@ -46,6 +46,8 @@ export class Game{
     private currentPath:{x:number,y:number}[]=[]
     private undoStack:Shape[]=[]
     private redoStack:Shape[]=[]
+    private lastUndoId: string | null = null;
+    private lastRedoId: string | null = null;
     private selectedShape:Shape | null=null
     private isDragging=false
     private dragOffsetX=0
@@ -107,44 +109,58 @@ export class Game{
         this.socket.onmessage=(event)=>{
             const message=JSON.parse(event.data)
             if(message.type==="shape_add"){
-                this.existingShapes.push(message.shape)
+                 if (!this.existingShapes.some(s => s.id === message.shape.id)) {
+                    this.existingShapes.push(message.shape);
+                    this.undoStack.push(message.shape);
+                    this.redoStack = [];
+                }
             }
             if(message.type==="shape_undo"){
-                console.log("Handling shape_undo for shapeId:", message.shapeId);
-                console.log("Current shapes before undo:", this.existingShapes);
-                this.existingShapes=this.existingShapes.filter(
-                    (s)=>s.id!==message.shapeId
-                )
-                console.log("Shapes after undo:", this.existingShapes);
+               if (message.shapeId !== this.lastUndoId) {
+                    console.log("Handling remote undo");
+                    const shapeIndex = this.existingShapes.findIndex(s => s.id === message.shapeId);
+                    if (shapeIndex !== -1) {
+                        const [shape] = this.existingShapes.splice(shapeIndex, 1);
+                        this.redoStack.push(shape);
+                    }
+                    this.lastUndoId = message.shapeId;
+                }
             }
             if(message.type==="shape_redo"){
-                if (message.shape) {
-                    this.existingShapes.push(message.shape); 
-                } else {
-                    console.warn("Redo received without shape:", message);
+                if (message.shapeId !== this.lastRedoId) {
+                    console.log("Handling remote redo");
+                    if (message.shape && !this.existingShapes.some(s => s.id === message.shape.id)) {
+                        this.existingShapes.push(message.shape);
+                        this.undoStack.push(message.shape);
+                        const redoIndex = this.redoStack.findIndex(s => s.id === message.shapeId);
+                        if (redoIndex !== -1) {
+                            this.redoStack.splice(redoIndex, 1);
+                        }
+                    }
+                    this.lastRedoId = message.shapeId;
                 }
             }
             else if (message.type === "shape_move") {
-            const shape = this.existingShapes.find(s => s.id === message.shapeId);
-            if (shape) {
-                if (shape.type === "rect" || shape.type === "text") {
-                    shape.x = message.newPosition.x;
-                    shape.y = message.newPosition.y;
-                }
-                else if (shape.type === "circle") {
-                    shape.centerX = message.newPosition.x;
-                    shape.centerY = message.newPosition.y;
-                }
-                else if (shape.type === "pencil") {
-                    const dx = message.newPosition.x - shape.points[0].x;
-                    const dy = message.newPosition.y - shape.points[0].y;
-                    for (const point of shape.points) {
-                        point.x += dx;
-                        point.y += dy;
+                const shape = this.existingShapes.find(s => s.id === message.shapeId);
+                if (shape) {
+                    if (shape.type === "rect" || shape.type === "text") {
+                        shape.x = message.newPosition.x;
+                        shape.y = message.newPosition.y;
+                    }
+                    else if (shape.type === "circle") {
+                        shape.centerX = message.newPosition.x;
+                        shape.centerY = message.newPosition.y;
+                    }
+                    else if (shape.type === "pencil") {
+                        const dx = message.newPosition.x - shape.points[0].x;
+                        const dy = message.newPosition.y - shape.points[0].y;
+                        for (const point of shape.points) {
+                            point.x += dx;
+                            point.y += dy;
+                        }
                     }
                 }
             }
-        }
             this.clearCanvas()
         }
     }
@@ -396,10 +412,15 @@ export class Game{
     }
 
     undo(){
-        if(this.existingShapes.length===0) return;
-        const shape=this.existingShapes.pop()!
-        console.log("Undo clicked, shape removed:", shape);
-        this.redoStack.push(shape)
+        if (this.existingShapes.length === 0) return;
+        
+        const shape = this.existingShapes.pop()!;
+        console.log("Local undo", shape.id);
+        
+        this.redoStack.push(shape);
+        this.lastUndoId = shape.id; // Track this undo
+        this.clearCanvas(); // Immediate UI update
+        
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
                 type: "shape_undo",
@@ -420,14 +441,21 @@ export class Game{
     blockMenu=(e:any)=>{e.preventDefault()}
 
     redo(){
-        if(this.redoStack.length===0) return;
-        const shape=this.redoStack.pop()!
+         if (this.redoStack.length === 0) return;
+        
+        const shape = this.redoStack.pop()!;
+        console.log("Local redo", shape.id);
+        
+        this.existingShapes.push(shape);
+        this.lastRedoId = shape.id; // Track this redo
+        this.clearCanvas(); // Immediate UI update
+        
         if (this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
-            type: "shape_redo",
-            roomId: this.roomId,
-            shapeId: shape.id,
-            shape
+                type: "shape_redo",
+                roomId: this.roomId,
+                shapeId: shape.id,
+                shape // Send full shape data
             }));
         }
     }

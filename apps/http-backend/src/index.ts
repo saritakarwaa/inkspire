@@ -7,7 +7,6 @@ import {prismaClient} from "@repo/db/client"
 import cors from "cors";
 const app=express()
 
-
 const allowedOrigins = ["http://localhost:3000", "https://inkspire-gamma.vercel.app"];
 
 app.use(cors({

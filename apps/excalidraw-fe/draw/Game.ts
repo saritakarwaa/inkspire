@@ -707,6 +707,36 @@ export class Game{
             exportCtx.textBaseline = "top";
             exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
             }
+            else if(shapeCopy.type==="line"){
+                exportCtx.beginPath()
+                exportCtx.moveTo(shapeCopy.startX,shapeCopy.startY)
+                exportCtx.lineTo(shapeCopy.endX,shapeCopy.endY)
+                 exportCtx.stroke();
+                exportCtx.closePath();
+            }
+            else if(shapeCopy.type==="arrow"){
+                exportCtx.beginPath();
+                exportCtx.moveTo(shapeCopy.startX, shapeCopy.startY);
+                exportCtx.lineTo(shapeCopy.endX, shapeCopy.endY);
+                exportCtx.stroke();
+
+                // Arrowhead
+                const angle = Math.atan2(shapeCopy.endY - shapeCopy.startY, shapeCopy.endX - shapeCopy.startX);
+                const headLength = 10;
+                exportCtx.beginPath();
+                exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
+                exportCtx.lineTo(
+                    shapeCopy.endX - headLength * Math.cos(angle - Math.PI / 6),
+                    shapeCopy.endY - headLength * Math.sin(angle - Math.PI / 6)
+                );
+                exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
+                exportCtx.lineTo(
+                    shapeCopy.endX - headLength * Math.cos(angle + Math.PI / 6),
+                    shapeCopy.endY - headLength * Math.sin(angle + Math.PI / 6)
+                );
+                exportCtx.stroke();
+            }
+
         }
         // Create download link
         const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
@@ -720,24 +750,20 @@ export class Game{
         setTimeout(() => {
             document.body.removeChild(link);
         }, 100);
-    }    
+    } 
+
 
     /** Snap end‑point to the nearest 45‑degree increment. */
-private snapAngle(
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number
-) {
-  const dx = endX - startX;
-  const dy = endY - startY;
-  const length = Math.hypot(dx, dy);
-  const rawAngle = Math.atan2(dy, dx);
-  const snappedAngle = Math.round(rawAngle / (Math.PI / 4)) * (Math.PI / 4);
-  return {
-    x: startX + Math.cos(snappedAngle) * length,
-    y: startY + Math.sin(snappedAngle) * length
-  };
+private snapAngle(startX: number,startY: number,endX: number,endY: number) {
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const length = Math.hypot(dx, dy);
+    const rawAngle = Math.atan2(dy, dx);
+    const snappedAngle = Math.round(rawAngle / (Math.PI / 4)) * (Math.PI / 4);
+    return {
+        x: startX + Math.cos(snappedAngle) * length,
+        y: startY + Math.sin(snappedAngle) * length
+    };
 }
 
 }

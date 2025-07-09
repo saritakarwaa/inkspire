@@ -11,7 +11,9 @@ import {
   Undo,
   Download,
   Type,
-  MousePointer2
+  MousePointer2,
+  ArrowRight,
+  Minus
 } from "lucide-react";
 
 export type Tool = "circle" | "rect" | "pencil" | "text" | "select" |"line" | "arrow";
@@ -141,13 +143,13 @@ function Topbar({
         />
 
         <IconButton activated={selectedTool==="line"} 
-         icon={<div className="w-5 h-5 border-t-2 border-black rotate-45" />}
+         icon={<Minus className="w-5 h-5"/>}
           onClick={() => setSelectedTool("line")}
         />
 
         <IconButton
           activated={selectedTool === "arrow"}
-          icon={<div className="w-0 h-0 border-l-[6px] border-t-[10px] border-l-transparent border-t-black rotate-45" />} // simple arrow icon
+          icon={<ArrowRight className="w-5 h-5"/>} // simple arrow icon
           onClick={() => setSelectedTool("arrow")}
         />
         <div className="w-px h-5 bg-gray-200 mx-1" />

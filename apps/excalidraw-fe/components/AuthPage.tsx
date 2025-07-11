@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pen, User, Mail, Lock, AlertCircle } from "lucide-react";
 import { AnimatedShapes } from "./animated-shapes";
+import {CreateUserSchema,SignInSchema} from "@repo/common/types"
 
 export function AuthPage({ isSignin }: { isSignin: boolean }) {
   const router = useRouter();
@@ -30,24 +31,30 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
-    const endpoint = isSignin ? "signin" : "signup";
-    const body = isSignin
-      ? {
-          username: formData.email,
-          password: formData.password,
-        }
-      : {
-          username: formData.email,
-          password: formData.password,
-          name: formData.name,
-        };
-    
+     const payload = isSignin
+    ? {
+        username: formData.email,
+        password: formData.password,
+      }
+    : {
+        username: formData.email,
+        password: formData.password,
+        name: formData.name,
+      };
+      const schema = isSignin ? SignInSchema : CreateUserSchema;
+      const result = schema.safeParse(payload);
+      if (!result.success) {
+        setError(result.error.issues[0].message); // show first error
+        setLoading(false);
+        return;
+      }
     try {
+      const endpoint = isSignin ? "signin" : "signup";
       const res = await fetch(`${HTTP_BACKEND}/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials:"include",
-        body: JSON.stringify(body)
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       

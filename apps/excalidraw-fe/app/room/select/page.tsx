@@ -8,17 +8,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pen, ArrowRight, Sparkles } from "lucide-react";
 import { AnimatedShapes } from "@/components/animated-shapes";
+import { CreateRoomSchema } from "@repo/common/types";
+
 
 export default function SelectRoomPage() {
   const [roomCode, setRoomCode] = useState("");
   const [loading, setLoading] = useState<"create" | "join" | null>(null);
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+
 
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   const createRoom = async () => {
-    if (!roomCode.trim()) return;          
+    if (!roomCode.trim()) return;      
+    const result = CreateRoomSchema.safeParse({ name: roomCode.trim() });    
+    if (!result.success) {
+      setError(result.error.issues[0].message); // you can show all if you want
+      return;
+    }
+
     setLoading("create");
     try {
       const res = await fetch(`${HTTP_BACKEND}/room`, {
@@ -37,10 +47,10 @@ export default function SelectRoomPage() {
       if (res.ok) {
         router.push(`/canvas/${data.roomId}`);
       } else {
-        alert(data.message || "Error creating room");
+        setError(data.message || "Error creating room");
       }
     } catch {
-      alert("Error creating room");
+      setError("Error creating room");
     } finally {
       setLoading(null);
     }
@@ -97,6 +107,7 @@ export default function SelectRoomPage() {
               onKeyDown={(e) => e.key === "Enter" && joinRoom()}
               className="h-12 border-gray-200 focus:border-purple-400 focus:ring-purple-400/20"
             />
+            {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
 
             {/* Buttons */}
             <div className="flex flex-col space-y-3">

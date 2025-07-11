@@ -14,8 +14,10 @@ export function IconButton({
     <button
       onClick={onClick}
       className={cn(
-        "w-8 h-8 rounded-md flex items-center justify-center hover:bg-gray-100 transition",
-        activated ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-800"
+        "w-8 h-8 rounded-md flex items-center justify-center transition duration-200",
+        activated
+          ? "bg-blue-500 text-white"
+          : "bg-gray-100 text-gray-800 hover:bg-gray-200 hover:text-black"
       )}
     >
       {icon}

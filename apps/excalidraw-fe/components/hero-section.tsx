@@ -7,7 +7,7 @@ import { AnimatedShapes } from "./animated-shapes";
 
 export function HeroSection() {
   return (
-    <div className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="relative min-h-[90vh] flex items-center justify-center overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-purple-900/20">
       <AnimatedShapes />
       
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
@@ -31,10 +31,10 @@ export function HeroSection() {
               backgroundSize: "200% 200%",
             }}
           >
-            Inskpire
+            Inkspire
           </motion.h1>
           <motion.p 
-            className="text-xl md:text-2xl text-gray-600 mb-8 leading-relaxed"
+            className="text-xl md:text-2xl text-gray-600 dark:text-gray-300 mb-8 leading-relaxed"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.8, delay: 0.5 }}
@@ -83,7 +83,7 @@ export function HeroSection() {
           className="flex flex-col sm:flex-row gap-8 justify-center items-center text-center"
         >
           <motion.div 
-            className="flex items-center space-x-2 text-gray-600"
+            className="flex items-center space-x-2 text-gray-600 dark:text-gray-300"
             whileHover={{ scale: 1.1 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
@@ -94,7 +94,7 @@ export function HeroSection() {
           </motion.div>
           
           <motion.div 
-            className="flex items-center space-x-2 text-gray-600"
+            className="flex items-center space-x-2 text-gray-600 dark:text-gray-300"
             whileHover={{ scale: 1.1 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
@@ -105,7 +105,7 @@ export function HeroSection() {
           </motion.div>
           
           <motion.div 
-            className="flex items-center space-x-2 text-gray-600"
+            className="flex items-center space-x-2 text-gray-600 dark:text-gray-300"
             whileHover={{ scale: 1.1 }}
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
@@ -118,7 +118,7 @@ export function HeroSection() {
       </div>
 
       {/* Background decoration */}
-      <div className="absolute inset-0 bg-gradient-to-t from-white/50 to-transparent pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-t from-white/50 to-transparent dark:from-gray-900/50 pointer-events-none" />
     </div>
   );
 }

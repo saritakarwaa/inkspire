@@ -9,63 +9,50 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pen, User, Mail, Lock, AlertCircle } from "lucide-react";
 import { AnimatedShapes } from "./animated-shapes";
-import {CreateUserSchema,SignInSchema} from "@repo/common/types"
+import { CreateUserSchema, SignInSchema } from "@repo/common/types";
 
 export function AuthPage({ isSignin }: { isSignin: boolean }) {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: ""
-  });
+  const [formData, setFormData] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async () => {
     setError("");
     setLoading(true);
-     const payload = isSignin
-    ? {
-        username: formData.email,
-        password: formData.password,
-      }
-    : {
-        username: formData.email,
-        password: formData.password,
-        name: formData.name,
-      };
-      const schema = isSignin ? SignInSchema : CreateUserSchema;
-      const result = schema.safeParse(payload);
-      if (!result.success) {
-        setError(result.error.issues[0].message); // show first error
-        setLoading(false);
-        return;
-      }
+    const payload = isSignin
+      ? { username: formData.email, password: formData.password }
+      : { username: formData.email, password: formData.password, name: formData.name };
+
+    const schema = isSignin ? SignInSchema : CreateUserSchema;
+    const result = schema.safeParse(payload);
+    if (!result.success) {
+      setError(result.error.issues[0].message);
+      setLoading(false);
+      return;
+    }
+
     try {
       const endpoint = isSignin ? "signin" : "signup";
       const res = await fetch(`${HTTP_BACKEND}/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials:"include",
+        credentials: "include",
         body: JSON.stringify(payload)
       });
+
       const data = await res.json();
-      
       if (!res.ok || data.message?.toLowerCase().includes("error")) {
         setError(data.message || "Something went wrong");
         return;
       }
-      
+
       if (isSignin) {
         localStorage.setItem("token", data.token);
-        console.log(data.token)
         router.push("/room/select");
       } else {
         router.push("/signin");
@@ -79,16 +66,16 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 relative overflow-hidden">
       <AnimatedShapes />
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
         className="relative z-10 w-full max-w-md mx-6"
       >
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 p-8">
+        <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-2xl shadow-2xl border border-white/20 dark:border-gray-800 p-8">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -104,18 +91,17 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
               >
                 <Pen className="w-6 h-6 text-white" />
               </motion.div>
-              <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                Inskpire
+              <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent dark:from-blue-400 dark:to-purple-400">
+                Inkspire
               </span>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">
-              {isSignin ? "Welcome Back" : "Join Inskpire"}
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+              {isSignin ? "Welcome Back" : "Join Inkspire"}
             </h2>
-            <p className="text-gray-600">
-              {isSignin 
-                ? "Sign in to continue your creative journey" 
-                : "Create your account and start collaborating"
-              }
+            <p className="text-gray-600 dark:text-gray-300">
+              {isSignin
+                ? "Sign in to continue your creative journey"
+                : "Create your account and start collaborating"}
             </p>
           </motion.div>
 
@@ -124,7 +110,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2 text-red-700"
+              className="mb-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-700 rounded-lg flex items-center space-x-2 text-red-700 dark:text-red-300"
             >
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span className="text-sm">{error}</span>
@@ -140,7 +126,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                 transition={{ duration: 0.6, delay: 0.2 }}
                 className="space-y-2"
               >
-                <Label htmlFor="name" className="text-gray-700 font-medium flex items-center space-x-2">
+                <Label htmlFor="name" className="text-gray-700 dark:text-gray-200 font-medium flex items-center space-x-2">
                   <User className="w-4 h-4" />
                   <span>Full Name</span>
                 </Label>
@@ -151,7 +137,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                   placeholder="Enter your full name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="h-12 border-gray-200 focus:border-blue-400 focus:ring-blue-400/20"
+                  className="h-12 border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:border-blue-400 focus:ring-blue-400/20"
                 />
               </motion.div>
             )}
@@ -162,7 +148,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
               transition={{ duration: 0.6, delay: isSignin ? 0.2 : 0.3 }}
               className="space-y-2"
             >
-              <Label htmlFor="email" className="text-gray-700 font-medium flex items-center space-x-2">
+              <Label htmlFor="email" className="text-gray-700 dark:text-gray-200 font-medium flex items-center space-x-2">
                 <Mail className="w-4 h-4" />
                 <span>Email / Username</span>
               </Label>
@@ -173,7 +159,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                 placeholder="Enter your email or username"
                 value={formData.email}
                 onChange={handleChange}
-                className="h-12 border-gray-200 focus:border-blue-400 focus:ring-blue-400/20"
+                className="h-12 border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:border-blue-400 focus:ring-blue-400/20"
               />
             </motion.div>
 
@@ -183,7 +169,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
               transition={{ duration: 0.6, delay: isSignin ? 0.3 : 0.4 }}
               className="space-y-2"
             >
-              <Label htmlFor="password" className="text-gray-700 font-medium flex items-center space-x-2">
+              <Label htmlFor="password" className="text-gray-700 dark:text-gray-200 font-medium flex items-center space-x-2">
                 <Lock className="w-4 h-4" />
                 <span>Password</span>
               </Label>
@@ -194,7 +180,7 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                 placeholder="Enter your password"
                 value={formData.password}
                 onChange={handleChange}
-                className="h-12 border-gray-200 focus:border-blue-400 focus:ring-blue-400/20"
+                className="h-12 border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:text-white focus:border-blue-400 focus:ring-blue-400/20"
               />
             </motion.div>
 
@@ -227,11 +213,11 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
             transition={{ duration: 0.6, delay: 0.6 }}
             className="mt-8 text-center"
           >
-            <p className="text-gray-600">
+            <p className="text-gray-600 dark:text-gray-400">
               {isSignin ? "Don't have an account? " : "Already have an account? "}
               <button
                 onClick={() => router.push(isSignin ? "/signup" : "/signin")}
-                className="text-blue-600 hover:text-purple-600 font-medium transition-colors duration-200"
+                className="text-blue-600 hover:text-purple-600 dark:text-blue-400 dark:hover:text-purple-400 font-medium transition-colors duration-200"
               >
                 {isSignin ? "Sign up" : "Sign in"}
               </button>

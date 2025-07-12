@@ -38,8 +38,14 @@ export class Game{
     private isDragging=false
     private dragOffsetX=0
     private dragOffsetY=0
+    private strokeColor:string
+    private fillColor:string
+    private needsRedraw=false
 
     constructor(canvas:HTMLCanvasElement,private parent: HTMLElement,roomId:string,socket:WebSocket){
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        this.strokeColor = prefersDark ? "#fff" : "#000";
+        this.fillColor   = prefersDark ? "#fff" : "#000";
         this.canvas=canvas
         this.ctx=canvas.getContext("2d")!
         this.socket=socket
@@ -52,6 +58,7 @@ export class Game{
         this.init()
         this.initHandlers()
         this.initMouseHandlers()
+        this.renderLoop()
     }
 
     resizeCanvas(){ //resize canvas dynamically
@@ -153,7 +160,12 @@ export class Game{
 
     clearCanvas(){
         this.ctx.setTransform(1,0,0,1,0,0)
-        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height)
+        this.ctx.fillStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "#000"
+        : "#fff";
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height)
         this.ctx.translate(this.offsetX,this.offsetY)
         this.ctx.scale(this.scale,this.scale)
         for(const shape of this.existingShapes){
@@ -163,14 +175,14 @@ export class Game{
 
     drawShape(shape:Shape,ctx: CanvasRenderingContext2D = this.ctx){
         if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
-            ctx.strokeStyle = "blue";
+            ctx.strokeStyle = (this.selectedTool === "select" && this.selectedShape?.id === shape.id)? "blue": this.strokeColor;
             ctx.lineWidth = 2;
         } else {
-            ctx.strokeStyle = "black";
+            ctx.strokeStyle = this.strokeColor;
             ctx.lineWidth = 1;
         }
         if(shape.type==="rect"){
-            ctx.strokeStyle = "black";
+            ctx.strokeStyle = this.strokeColor;
             ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
         }
         else if(shape.type=="circle"){
@@ -189,7 +201,7 @@ export class Game{
             ctx.closePath()
         }
         else if(shape.type==="text"){
-            ctx.fillStyle="black"
+            ctx.fillStyle=this.fillColor
             ctx.font="16px Arial"
             ctx.textBaseline="top"
             ctx.fillText(shape.text,shape.x,shape.y)
@@ -218,7 +230,7 @@ export class Game{
             ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
             ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
             ctx.lineTo(endX, endY);
-            ctx.fillStyle = "black";
+            ctx.fillStyle = this.fillColor;
             ctx.fill();
         }
         
@@ -397,39 +409,48 @@ export class Game{
                 this.ctx.closePath()
             }  
            else if (selectedTool === "line" || selectedTool === "arrow") {
-  // Default end‑point
-  let endX = x;
-  let endY = y;
+                // Default end‑point
+                let endX = x;
+                let endY = y;
 
-  // Snap if Shift is held
-  if (e.shiftKey) {
-    ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
-  }
+                // Snap if Shift is held
+                if (e.shiftKey) {
+                    ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
+                }
 
-  this.ctx.beginPath();
-  this.ctx.moveTo(this.startX, this.startY);
-  this.ctx.lineTo(endX, endY);
-  this.ctx.stroke();
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.startX, this.startY);
+                this.ctx.lineTo(endX, endY);
+                this.ctx.stroke();
 
-  // Draw arrow head for the arrow tool
-  if (selectedTool === "arrow") {
-    const angle = Math.atan2(endY - this.startY, endX - this.startX);
-    const head = 10;
-    this.ctx.lineTo(
-      endX - head * Math.cos(angle - Math.PI / 6),
-      endY - head * Math.sin(angle - Math.PI / 6)
-    );
-    this.ctx.moveTo(endX, endY);
-    this.ctx.lineTo(
-      endX - head * Math.cos(angle + Math.PI / 6),
-      endY - head * Math.sin(angle + Math.PI / 6)
-    );
-    this.ctx.stroke();
-  }
-}
-
+                // Draw arrow head for the arrow tool
+                if (selectedTool === "arrow") {
+                    const angle = Math.atan2(endY - this.startY, endX - this.startX);
+                    const head = 10;
+                    this.ctx.lineTo(
+                    endX - head * Math.cos(angle - Math.PI / 6),
+                    endY - head * Math.sin(angle - Math.PI / 6)
+                    );
+                    this.ctx.moveTo(endX, endY);
+                    this.ctx.lineTo(
+                    endX - head * Math.cos(angle + Math.PI / 6),
+                    endY - head * Math.sin(angle + Math.PI / 6)
+                    );
+                    this.ctx.stroke();
+                }
+            }
+            this.needsRedraw=true
         }
     }
+    private renderLoop = () => {
+        if (this.needsRedraw) {
+            this.clearCanvas()
+            //this.drawPreview()   // only the shape being dragged/drawn
+            this.needsRedraw = false
+        }
+        requestAnimationFrame(this.renderLoop)
+    }
+
 
 
     initMouseHandlers(){
@@ -742,7 +763,7 @@ export class Game{
         const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
         const link = document.createElement('a');
         link.href = dataURL;
-        link.download = `Inskpire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
+        link.download = `Inkspire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
         // Trigger download
         document.body.appendChild(link);
         link.click();

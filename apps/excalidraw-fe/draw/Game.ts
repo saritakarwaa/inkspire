@@ -43,9 +43,9 @@ export class Game{
     private needsRedraw=false
 
     constructor(canvas:HTMLCanvasElement,private parent: HTMLElement,roomId:string,socket:WebSocket){
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        this.strokeColor = prefersDark ? "#fff" : "#000";
-        this.fillColor   = prefersDark ? "#fff" : "#000";
+        const isDarkTheme = document.documentElement.classList.contains("dark");
+        this.strokeColor = isDarkTheme ? "#fff" : "#000";
+        this.fillColor   = isDarkTheme ? "#fff" : "#000";
         this.canvas=canvas
         this.ctx=canvas.getContext("2d")!
         this.socket=socket
@@ -160,8 +160,8 @@ export class Game{
 
     clearCanvas(){
         this.ctx.setTransform(1,0,0,1,0,0)
-        this.ctx.fillStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "#000"
+        this.ctx.fillStyle = document.documentElement.classList.contains("dark")
+  ?     "#000"
         : "#fff";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 

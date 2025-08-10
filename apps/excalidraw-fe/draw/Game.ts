@@ -7,784 +7,889 @@ export type Shape = { id: string } & (
   | { type: "circle"; centerX: number; centerY: number; radius: number }
   | { type: "pencil"; points: { x: number; y: number }[] }
   | { type: "text"; x: number; y: number; text: string; font: string }
- | { type: "line" | "arrow"; startX: number; startY: number; endX: number; endY: number }
+  | { type: "line" | "arrow"; startX: number; startY: number; endX: number; endY: number }
 );
 
-export class Game{
-    private canvas:HTMLCanvasElement
-    private ctx:CanvasRenderingContext2D
-    private existingShapes:Shape[] 
-    private roomId:string
-    socket:WebSocket
+export class Game {
+  private canvas: HTMLCanvasElement
+  private ctx: CanvasRenderingContext2D
+  private permanentCanvas: HTMLCanvasElement
+  private permanentCtx: CanvasRenderingContext2D
 
-    private offsetX=0
-    private offsetY=0
-    private scale=1
+  private existingShapes: Shape[]
+  private roomId: string
+  socket: WebSocket
 
-    private isPanning=false
-    private lastPanX=0
-    private lastPanY=0
+  private offsetX = 0
+  private offsetY = 0
+  private scale = 1
 
-    private clicked:boolean
-    private startX:number
-    private startY:number
-    private selectedTool:Tool="circle"
-    private currentPath:{x:number,y:number}[]=[]
-    private undoStack:Shape[]=[]
-    private redoStack:Shape[]=[]
-    private lastUndoId: string | null = null;
-    private lastRedoId: string | null = null;
-    private selectedShape:Shape | null=null
-    private isDragging=false
-    private dragOffsetX=0
-    private dragOffsetY=0
-    private strokeColor:string
-    private fillColor:string
-    private needsRedraw=false
+  private isPanning = false
+  private lastPanX = 0
+  private lastPanY = 0
 
-    constructor(canvas:HTMLCanvasElement,private parent: HTMLElement,roomId:string,socket:WebSocket){
-        const isDarkTheme = document.documentElement.classList.contains("dark");
-        this.strokeColor = isDarkTheme ? "#fff" : "#000";
-        this.fillColor   = isDarkTheme ? "#fff" : "#000";
-        this.canvas=canvas
-        this.ctx=canvas.getContext("2d")!
-        this.socket=socket
-        this.roomId=roomId
-        this.existingShapes =[]
-        this.clicked=false
-        this.startX=0
-        this.startY=0
-        this.resizeCanvas()
-        this.init()
-        this.initHandlers()
-        this.initMouseHandlers()
-        this.renderLoop()
-    }
+  private clicked: boolean
+  private startX: number
+  private startY: number
 
-    resizeCanvas(){ //resize canvas dynamically
-        this.canvas.width=window.innerWidth
-        this.canvas.height=window.innerHeight
-        window.addEventListener("resize",()=>{
-            this.canvas.width=window.innerWidth
-            this.canvas.height=window.innerHeight
-            this.clearCanvas()
-        })
-    }
+  private selectedTool: Tool = "circle"
+  private currentPath: { x: number, y: number }[] = []
+  private undoStack: Shape[] = []
+  private redoStack: Shape[] = []
+  private lastUndoId: string | null = null;
+  private lastRedoId: string | null = null;
+  private selectedShape: Shape | null = null
+  private isDragging = false
+  private dragOffsetX = 0
+  private dragOffsetY = 0
+  private strokeColor: string
+  private fillColor: string
 
-    screenToWorld(x:number,y:number){
-        return {
-            x:(x-this.offsetX)/this.scale,
-            y:(y-this.offsetY)/this.scale
-        }
-    }
+  // rendering flags / preview
+  private needsRedraw = true
+  private permanentDirty = true // when true, permanentCanvas must be re-rendered from existingShapes
+  private previewShape: Shape | null = null
 
+  // pencil throttle
+  private lastPencilTime = 0
+  private pencilThrottleMs = 8 // ~125Hz cap on adding points to currentPath
 
-    destroy(){
-        this.canvas.removeEventListener("mousedown", this.panMouseDown);
-        this.canvas.removeEventListener("mouseup",   this.panMouseUp);
-        this.canvas.removeEventListener("mousemove", this.panMouseMove);
-        this.canvas.removeEventListener("wheel",     this.wheelZoom);
-        this.canvas.removeEventListener("contextmenu", this.blockMenu);
-    }
-    setTool(tool:"circle" | "pencil" | "rect" | "text" | "select" | "line" | "arrow"){
-        this.selectedTool=tool
-    }
-    async init(){
-        this.existingShapes=await getExistingShapes(this.roomId)
-        this.clearCanvas()
-    }
+  constructor(canvas: HTMLCanvasElement, private parent: HTMLElement, roomId: string, socket: WebSocket) {
+    const isDarkTheme = document.documentElement.classList.contains("dark");
+    this.strokeColor = isDarkTheme ? "#fff" : "#000";
+    this.fillColor = isDarkTheme ? "#fff" : "#000";
+    this.canvas = canvas
+    this.ctx = canvas.getContext("2d")!
+    this.socket = socket
+    this.roomId = roomId
+    this.existingShapes = []
+    this.clicked = false
+    this.startX = 0
+    this.startY = 0
 
-    initHandlers(){
-        if (!this.socket) {
-            console.error("WebSocket is not initialized")
-            return
-        }
-        this.socket.onmessage=(event)=>{
-            const message=JSON.parse(event.data)
-            if(message.type==="shape_add"){
-                 if (!this.existingShapes.some(s => s.id === message.shape.id)) {
-                    this.existingShapes.push(message.shape);
-                    this.undoStack.push(message.shape);
-                    this.redoStack = [];
-                }
-            }
-            if(message.type==="shape_undo"){
-               if (message.shapeId !== this.lastUndoId) {
-                    console.log("Handling remote undo");
-                    const shapeIndex = this.existingShapes.findIndex(s => s.id === message.shapeId);
-                    if (shapeIndex !== -1) {
-                        const [shape] = this.existingShapes.splice(shapeIndex, 1);
-                        this.redoStack.push(shape);
-                    }
-                    this.lastUndoId = message.shapeId;
-                }
-            }
-            if(message.type==="shape_redo"){
-                if (message.shapeId !== this.lastRedoId) {
-                    console.log("Handling remote redo");
-                    if (message.shape && !this.existingShapes.some(s => s.id === message.shape.id)) {
-                        this.existingShapes.push(message.shape);
-                        this.undoStack.push(message.shape);
-                        const redoIndex = this.redoStack.findIndex(s => s.id === message.shapeId);
-                        if (redoIndex !== -1) {
-                            this.redoStack.splice(redoIndex, 1);
-                        }
-                    }
-                    this.lastRedoId = message.shapeId;
-                }
-            }
-            else if (message.type === "shape_move") {
-                const shape = this.existingShapes.find(s => s.id === message.shapeId);
-                if (shape) {
-                    if (shape.type === "rect" || shape.type === "text") {
-                        shape.x = message.newPosition.x;
-                        shape.y = message.newPosition.y;
-                    }
-                    else if (shape.type === "circle") {
-                        shape.centerX = message.newPosition.x;
-                        shape.centerY = message.newPosition.y;
-                    }
-                    else if (shape.type === "pencil") {
-                        const dx = message.newPosition.x - shape.points[0].x;
-                        const dy = message.newPosition.y - shape.points[0].y;
-                        for (const point of shape.points) {
-                            point.x += dx;
-                            point.y += dy;
-                        }
-                    }
-                }
-            }
-            this.clearCanvas()
-        }
-    }
+    // create offscreen permanent canvas
+    this.permanentCanvas = document.createElement('canvas')
+    this.permanentCanvas.width = this.canvas.width = window.innerWidth
+    this.permanentCanvas.height = this.canvas.height = window.innerHeight
+    this.permanentCtx = this.permanentCanvas.getContext('2d')!
 
-    clearCanvas(){
-        this.ctx.setTransform(1,0,0,1,0,0)
-        this.ctx.fillStyle = document.documentElement.classList.contains("dark")
-  ?     "#000"
-        : "#fff";
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height)
-        this.ctx.translate(this.offsetX,this.offsetY)
-        this.ctx.scale(this.scale,this.scale)
-        for(const shape of this.existingShapes){
-            this.drawShape(shape)
-        }
-    }
-
-    drawShape(shape:Shape,ctx: CanvasRenderingContext2D = this.ctx){
-        if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
-            ctx.strokeStyle = (this.selectedTool === "select" && this.selectedShape?.id === shape.id)? "blue": this.strokeColor;
-            ctx.lineWidth = 2;
-        } else {
-            ctx.strokeStyle = this.strokeColor;
-            ctx.lineWidth = 1;
-        }
-        if(shape.type==="rect"){
-            ctx.strokeStyle = this.strokeColor;
-            ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
-        }
-        else if(shape.type=="circle"){
-            ctx.beginPath();
-            ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        else if(shape.type==="pencil"){
-            if (!shape.points || shape.points.length === 0) return;
-            ctx.beginPath();
-            const [first, ...rest] = shape.points;
-            if (!first) return; 
-            ctx.moveTo(first.x, first.y);
-            for (const pt of rest) ctx.lineTo(pt.x, pt.y);
-            ctx.stroke();
-            ctx.closePath()
-        }
-        else if(shape.type==="text"){
-            ctx.fillStyle=this.fillColor
-            ctx.font="16px Arial"
-            ctx.textBaseline="top"
-            ctx.fillText(shape.text,shape.x,shape.y)
-        }
-        else if(shape.type==="line"){
-            ctx.beginPath();
-            ctx.moveTo(shape.startX, shape.startY);
-            ctx.lineTo(shape.endX, shape.endY);
-            ctx.stroke();
-        }
-        else if(shape.type==="arrow"){
-            const { startX, startY, endX, endY } = shape;
-            const headLength = 10;
-            const dx = endX - startX;
-            const dy = endY - startY;
-            const angle = Math.atan2(dy, dx);
-
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(endX, endY);
-            ctx.stroke();
-
-            // draw arrow head
-            ctx.beginPath();
-            ctx.moveTo(endX, endY);
-            ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
-            ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
-            ctx.lineTo(endX, endY);
-            ctx.fillStyle = this.fillColor;
-            ctx.fill();
-        }
-        
-    }
-
-
-    mouseUpHandler=(e:MouseEvent)=>{
-        if (this.isDragging && this.selectedShape) {
-            this.isDragging = false;
-            
-            // Notify other clients about the move
-            if (this.socket.readyState === WebSocket.OPEN) {
-                this.socket.send(JSON.stringify({
-                    type: "shape_move",
-                    shapeId: this.selectedShape.id,
-                    newPosition: this.getShapePosition(this.selectedShape),
-                    roomId: this.roomId
-                }));
-            }
-            
-            return;
-        }
-        this.clicked=false
-        const { x, y } = this.screenToWorld(e.clientX, e.clientY);
-        const width = x - this.startX;
-        const height = y - this.startY;
-       
-        const selectedTool=this.selectedTool
-        let shape:Shape | null=null
-        const shapeId=nanoid()
-        if(selectedTool==="rect"){
-            shape={id:shapeId,type:"rect",x:this.startX,y:this.startY,height,width}
-        }
-        else if(selectedTool==="circle"){
-            const radius=Math.abs(Math.max(width, height) / 2);
-            shape={id:shapeId,type:"circle",radius:radius,centerX:this.startX+radius,centerY:this.startY+radius }    
-        }
-        else if(this.selectedTool==="pencil"){
-            if (this.currentPath.length > 0) {
-                shape = {
-                id: shapeId,
-                type: "pencil",
-                points: [...this.currentPath],
-                };
-            }
-            this.currentPath=[]
-        }
-        else if (selectedTool === "line" || selectedTool === "arrow") {
-  // <-- insert snapping before you store x/y
-  let endX = x;
-  let endY = y;
-  if (e.shiftKey) {
-    ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
+    this.resizeCanvas()
+    this.init()
+    this.initHandlers()
+    this.initMouseHandlers()
+    this.renderLoop()
   }
 
-  shape = {
-    id: shapeId,
-    type: selectedTool,
-    startX: this.startX,
-    startY: this.startY,
-    endX,
-    endY
-  };
-}
+  resizeCanvas() { // resize canvas dynamically
+    // set sizes initially already in constructor; keep listener to update both
+    window.addEventListener("resize", () => {
+      // preserve current sizes
+      this.canvas.width = window.innerWidth
+      this.canvas.height = window.innerHeight
+      this.permanentCanvas.width = this.canvas.width
+      this.permanentCanvas.height = this.canvas.height
+      // mark permanent for re-render and draw immediately
+      this.permanentDirty = true
+      this.redrawPermanent()
+      this.drawVisible()
+    })
+  }
 
-        if(!shape) return
-        this.existingShapes.push(shape)
-        this.undoStack.push(shape)
-        this.redoStack=[]
-        console.log("Sending shape_add", shape.id)
-        if (this.socket.readyState === WebSocket.OPEN) {
-            
-            this.socket.send(JSON.stringify({
-                type: "shape_add",
-                shape,
-                roomId: this.roomId
-            }));
-        } else {
-            console.warn("WebSocket is not open, cannot send shape");
-        }
+  screenToWorld(x: number, y: number) {
+    return {
+      x: (x - this.offsetX) / this.scale,
+      y: (y - this.offsetY) / this.scale
     }
+  }
 
+  destroy() {
+    this.canvas.removeEventListener("mousedown", this.panMouseDown);
+    this.canvas.removeEventListener("mouseup", this.panMouseUp);
+    this.canvas.removeEventListener("mousemove", this.panMouseMove);
+    this.canvas.removeEventListener("wheel", this.wheelZoom);
+    this.canvas.removeEventListener("contextmenu", this.blockMenu);
+  }
+  setTool(tool: "circle" | "pencil" | "rect" | "text" | "select" | "line" | "arrow") {
+    this.selectedTool = tool
+  }
+  async init() {
+    this.existingShapes = await getExistingShapes(this.roomId)
+    // initial permanent draw
+    this.permanentDirty = true
+    this.redrawPermanent()
+    this.drawVisible()
+  }
 
-    mouseDownHandler=(e:MouseEvent)=>{
-        const {x,y}=this.screenToWorld(e.clientX,e.clientY)
-        if(this.selectedTool==="text"){
-            this.createTextInput(e.clientX,e.clientY)
-            return
+  initHandlers() {
+    if (!this.socket) {
+      console.error("WebSocket is not initialized")
+      return
+    }
+    this.socket.onmessage = (event) => {
+      const message = JSON.parse(event.data)
+      if (message.type === "shape_add") {
+        if (!this.existingShapes.some(s => s.id === message.shape.id)) {
+          this.existingShapes.push(message.shape);
+          this.undoStack.push(message.shape);
+          this.redoStack = [];
+          this.permanentDirty = true;
         }
-        if (this.selectedTool === "select") {
-            this.selectedShape = this.getShapeAt(x, y);
-            if (this.selectedShape) {
-                this.isDragging = true;
-                if (this.selectedShape.type === "rect") {
-                    this.dragOffsetX = x - this.selectedShape.x;
-                    this.dragOffsetY = y - this.selectedShape.y;
-                }
-                else if (this.selectedShape.type === "circle") {
-                    this.dragOffsetX = x - this.selectedShape.centerX;
-                    this.dragOffsetY = y - this.selectedShape.centerY;
-                }
-                else if (this.selectedShape.type === "pencil") {
-                    // For pencil, use first point as reference
-                    this.dragOffsetX = x - this.selectedShape.points[0].x;
-                    this.dragOffsetY = y - this.selectedShape.points[0].y;
-                }
-                else if(this.selectedShape.type==="text"){
-                    this.dragOffsetX = x - this.selectedShape.x;
-                    this.dragOffsetY = y - this.selectedShape.y;
-                }
-                return;
+      } else if (message.type === "shape_undo") {
+        if (message.shapeId !== this.lastUndoId) {
+          console.log("Handling remote undo");
+          const shapeIndex = this.existingShapes.findIndex(s => s.id === message.shapeId);
+          if (shapeIndex !== -1) {
+            const [shape] = this.existingShapes.splice(shapeIndex, 1);
+            this.redoStack.push(shape);
+            this.permanentDirty = true;
+          }
+          this.lastUndoId = message.shapeId;
+        }
+      } else if (message.type === "shape_redo") {
+        if (message.shapeId !== this.lastRedoId) {
+          console.log("Handling remote redo");
+          if (message.shape && !this.existingShapes.some(s => s.id === message.shape.id)) {
+            this.existingShapes.push(message.shape);
+            this.undoStack.push(message.shape);
+            const redoIndex = this.redoStack.findIndex(s => s.id === message.shapeId);
+            if (redoIndex !== -1) {
+              this.redoStack.splice(redoIndex, 1);
             }
+            this.permanentDirty = true;
+          }
+          this.lastRedoId = message.shapeId;
         }
-        this.clicked=true
-        this.startX=x
-        this.startY=y
-
-        if(this.selectedTool==="pencil"){
-            this.currentPath=[{x,y}]
-        }
-    }
-
-    mouseMoveHandler=(e:MouseEvent)=>{
-        const { x, y } = this.screenToWorld(e.clientX, e.clientY);
-        if (this.isDragging && this.selectedShape) {
-            if (this.selectedShape.type === "rect") {
-                this.selectedShape.x = x - this.dragOffsetX;
-                this.selectedShape.y = y - this.dragOffsetY;
+      } else if (message.type === "shape_move") {
+        const shape = this.existingShapes.find(s => s.id === message.shapeId);
+        if (shape) {
+          if (shape.type === "rect" || shape.type === "text") {
+            shape.x = message.newPosition.x;
+            shape.y = message.newPosition.y;
+          }
+          else if (shape.type === "circle") {
+            shape.centerX = message.newPosition.x;
+            shape.centerY = message.newPosition.y;
+          }
+          else if (shape.type === "pencil") {
+            const dx = message.newPosition.x - shape.points[0].x;
+            const dy = message.newPosition.y - shape.points[0].y;
+            for (const point of shape.points) {
+              point.x += dx;
+              point.y += dy;
             }
-            else if (this.selectedShape.type === "circle") {
-                this.selectedShape.centerX = x - this.dragOffsetX;
-                this.selectedShape.centerY = y - this.dragOffsetY;
-            }
-            else if (this.selectedShape.type === "pencil") {
-                const dx = x - this.dragOffsetX - this.selectedShape.points[0].x;
-                const dy = y - this.dragOffsetY - this.selectedShape.points[0].y;
-                for (const point of this.selectedShape.points) {
-                    point.x += dx;
-                    point.y += dy;
-                }
-            }
-            else if (this.selectedShape.type === "text") {
-                this.selectedShape.x = x - this.dragOffsetX;
-                this.selectedShape.y = y - this.dragOffsetY;
-            }
-            
-            this.clearCanvas();
-            return;
+          }
+          this.permanentDirty = true;
         }
-        if(this.clicked){ 
-            const width = x - this.startX;
-            const height = y - this.startY;
+      }
+      // Re-render permanent (batched) and update visible canvas
+      this.redrawPermanent()
+      this.drawVisible()
+    }
+  }
 
-            this.clearCanvas()
-            this.ctx.strokeStyle="black"
-            const selectedTool=this.selectedTool
-            if(selectedTool==="rect"){
-                this.ctx.strokeRect(this.startX,this.startY,width,height)
-            }
-            else if(selectedTool==="circle"){
-                const radius=Math.abs(Math.max(width, height) / 2);
-                const centerX=this.startX+radius
-                const centerY=this.startY+radius
-                this.ctx.beginPath()
-                this.ctx.arc(centerX,centerY,Math.abs(radius),0,Math.PI*2)
-                this.ctx.stroke()
-                this.ctx.closePath()
-            } 
-            else if(selectedTool==="pencil"){
-                this.currentPath.push({x,y})
-                this.ctx.beginPath()
-                const [first,...rest]=this.currentPath;
-                this.ctx.moveTo(first.x,first.y)
-                rest.forEach(p=>this.ctx.lineTo(p.x,p.y))
-                this.ctx.stroke()
-                this.ctx.closePath()
-            }  
-           else if (selectedTool === "line" || selectedTool === "arrow") {
-                // Default end‑point
-                let endX = x;
-                let endY = y;
+  /** Re-draws all existingShapes into the offscreen permanent canvas.
+   *  This is done only when permanentDirty is true to avoid repeated full redraws.
+   */
+  private redrawPermanent() {
+    // Render to permanent context in world coordinates (no transforms)
+    this.permanentCtx.setTransform(1, 0, 0, 1, 0, 0)
+    // clear background
+    this.permanentCtx.fillStyle = document.documentElement.classList.contains("dark") ? "#000" : "#fff";
+    this.permanentCtx.fillRect(0, 0, this.permanentCanvas.width, this.permanentCanvas.height);
 
-                // Snap if Shift is held
-                if (e.shiftKey) {
-                    ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
-                }
+    // draw all shapes onto permanentCtx using world coords
+    for (const shape of this.existingShapes) {
+      this.drawShape(shape, this.permanentCtx)
+    }
 
-                this.ctx.beginPath();
-                this.ctx.moveTo(this.startX, this.startY);
-                this.ctx.lineTo(endX, endY);
-                this.ctx.stroke();
+    this.permanentDirty = false
+    this.needsRedraw = true
+  }
 
-                // Draw arrow head for the arrow tool
-                if (selectedTool === "arrow") {
-                    const angle = Math.atan2(endY - this.startY, endX - this.startX);
-                    const head = 10;
-                    this.ctx.lineTo(
-                    endX - head * Math.cos(angle - Math.PI / 6),
-                    endY - head * Math.sin(angle - Math.PI / 6)
-                    );
-                    this.ctx.moveTo(endX, endY);
-                    this.ctx.lineTo(
-                    endX - head * Math.cos(angle + Math.PI / 6),
-                    endY - head * Math.sin(angle + Math.PI / 6)
-                    );
-                    this.ctx.stroke();
-                }
-            }
-            this.needsRedraw=true
+  /** Draw visible canvas by composing background -> transforms -> permanent -> preview */
+  private drawVisible() {
+    // If permanent is dirty, ensure it's redrawn first
+    if (this.permanentDirty) this.redrawPermanent()
+
+    // reset transform, fill background
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0)
+    this.ctx.fillStyle = document.documentElement.classList.contains("dark") ? "#000" : "#fff";
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // apply pan/zoom
+    this.ctx.translate(this.offsetX, this.offsetY)
+    this.ctx.scale(this.scale, this.scale)
+
+    // draw the entire permanent layer in one image draw (fast)
+    // permanentCanvas contains world coords drawn at 0,0
+    this.ctx.drawImage(this.permanentCanvas, 0, 0)
+
+    // draw preview shape on top (if any)
+    if (this.previewShape) {
+      this.drawShape(this.previewShape, this.ctx)
+    }
+
+    // if dragging a shape, draw that shape on top to show live movement
+    if (this.isDragging && this.selectedShape) {
+      this.drawShape(this.selectedShape, this.ctx)
+    }
+  }
+
+  clearCanvas() {
+    // Keep semantics similar to previous: immediate visual update
+    // but use optimized permanent + preview pipeline
+    if (this.permanentDirty) {
+      this.redrawPermanent()
+    }
+    this.drawVisible()
+    this.needsRedraw = false
+  }
+
+  drawShape(shape: Shape, ctx: CanvasRenderingContext2D = this.ctx) {
+    // Keep style setting similar to your original code
+    if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
+      ctx.strokeStyle = (this.selectedTool === "select" && this.selectedShape?.id === shape.id) ? "blue" : this.strokeColor;
+      ctx.lineWidth = 2;
+    } else {
+      ctx.strokeStyle = this.strokeColor;
+      ctx.lineWidth = 1;
+    }
+
+    if (shape.type === "rect") {
+      ctx.strokeStyle = this.strokeColor;
+      ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
+    }
+    else if (shape.type == "circle") {
+      ctx.beginPath();
+      ctx.arc(shape.centerX, shape.centerY, shape.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    else if (shape.type === "pencil") {
+      if (!shape.points || shape.points.length === 0) return;
+      ctx.beginPath();
+      const [first, ...rest] = shape.points;
+      if (!first) return;
+      ctx.moveTo(first.x, first.y);
+      for (const pt of rest) ctx.lineTo(pt.x, pt.y);
+      ctx.stroke();
+      ctx.closePath()
+    }
+    else if (shape.type === "text") {
+      ctx.fillStyle = this.fillColor
+      ctx.font = "16px Arial"
+      ctx.textBaseline = "top"
+      ctx.fillText(shape.text, shape.x, shape.y)
+    }
+    else if (shape.type === "line") {
+      ctx.beginPath();
+      ctx.moveTo(shape.startX, shape.startY);
+      ctx.lineTo(shape.endX, shape.endY);
+      ctx.stroke();
+    }
+    else if (shape.type === "arrow") {
+      const { startX, startY, endX, endY } = shape;
+      const headLength = 10;
+      const dx = endX - startX;
+      const dy = endY - startY;
+      const angle = Math.atan2(dy, dx);
+
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // draw arrow head
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6), endY - headLength * Math.sin(angle + Math.PI / 6));
+      ctx.lineTo(endX, endY);
+      ctx.fillStyle = this.fillColor;
+      ctx.fill();
+    }
+  }
+
+  mouseUpHandler = (e: MouseEvent) => {
+    if (this.isDragging && this.selectedShape) {
+      this.isDragging = false;
+
+      // Notify other clients about the move
+      if (this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({
+          type: "shape_move",
+          shapeId: this.selectedShape.id,
+          newPosition: this.getShapePosition(this.selectedShape),
+          roomId: this.roomId
+        }));
+      }
+
+      // after moving, mark permanent dirty and redraw permanent
+      this.permanentDirty = true
+      this.redrawPermanent()
+      this.drawVisible()
+      return;
+    }
+    this.clicked = false
+    const { x, y } = this.screenToWorld(e.clientX, e.clientY);
+    const width = x - this.startX;
+    const height = y - this.startY;
+
+    const selectedTool = this.selectedTool
+    let shape: Shape | null = null
+    const shapeId = nanoid()
+    if (selectedTool === "rect") {
+      shape = { id: shapeId, type: "rect", x: this.startX, y: this.startY, height, width } as any
+    }
+    else if (selectedTool === "circle") {
+      const radius = Math.abs(Math.max(width, height) / 2);
+      shape = { id: shapeId, type: "circle", radius: radius, centerX: this.startX + radius, centerY: this.startY + radius } as any
+    }
+    else if (this.selectedTool === "pencil") {
+      if (this.currentPath.length > 0) {
+        shape = {
+          id: shapeId,
+          type: "pencil",
+          points: [...this.currentPath],
+        } as Shape;
+      }
+      this.currentPath = []
+      this.previewShape = null
+    }
+    else if (selectedTool === "line" || selectedTool === "arrow") {
+      // <-- insert snapping before you store x/y
+      let endX = x;
+      let endY = y;
+      if (e.shiftKey) {
+        ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
+      }
+
+      shape = {
+        id: shapeId,
+        type: selectedTool,
+        startX: this.startX,
+        startY: this.startY,
+        endX,
+        endY
+      } as any;
+      this.previewShape = null
+    }
+
+    if (!shape) {
+      // ensure preview cleared + visible updated
+      this.previewShape = null
+      this.drawVisible()
+      return
+    }
+
+    this.existingShapes.push(shape)
+    this.undoStack.push(shape)
+    this.redoStack = []
+    console.log("Sending shape_add", shape.id)
+    if (this.socket.readyState === WebSocket.OPEN) {
+
+      this.socket.send(JSON.stringify({
+        type: "shape_add",
+        shape,
+        roomId: this.roomId
+      }));
+    } else {
+      console.warn("WebSocket is not open, cannot send shape");
+    }
+
+    // mark permanent dirty and re-render permanent once (fast)
+    this.permanentDirty = true
+    this.redrawPermanent()
+    this.drawVisible()
+  }
+
+  mouseDownHandler = (e: MouseEvent) => {
+    const { x, y } = this.screenToWorld(e.clientX, e.clientY)
+    if (this.selectedTool === "text") {
+      this.createTextInput(e.clientX, e.clientY)
+      return
+    }
+    if (this.selectedTool === "select") {
+      this.selectedShape = this.getShapeAt(x, y);
+      if (this.selectedShape) {
+        this.isDragging = true;
+        if (this.selectedShape.type === "rect") {
+          this.dragOffsetX = x - this.selectedShape.x;
+          this.dragOffsetY = y - this.selectedShape.y;
         }
-    }
-    private renderLoop = () => {
-        if (this.needsRedraw) {
-            this.clearCanvas()
-            //this.drawPreview()   // only the shape being dragged/drawn
-            this.needsRedraw = false
+        else if (this.selectedShape.type === "circle") {
+          this.dragOffsetX = x - this.selectedShape.centerX;
+          this.dragOffsetY = y - this.selectedShape.centerY;
         }
-        requestAnimationFrame(this.renderLoop)
-    }
-
-
-
-    initMouseHandlers(){
-        this.canvas.addEventListener("mousedown", this.panMouseDown);
-        this.canvas.addEventListener("mouseup",   this.panMouseUp);
-        this.canvas.addEventListener("mousemove", this.panMouseMove);
-        this.canvas.addEventListener("wheel",     this.wheelZoom, { passive: false });
-        // Prevent context menu on right-click
-        this.canvas.addEventListener("contextmenu",this.blockMenu);
-    }
-    panMouseDown=(e:MouseEvent)=>{
-         // For text tool or select tool, always handle left click first
-        if ((this.selectedTool === "text" || this.selectedTool === "select") && e.button === 0) {
-            this.mouseDownHandler(e);
-            return;
+        else if (this.selectedShape.type === "pencil") {
+          // For pencil, use first point as reference
+          this.dragOffsetX = x - this.selectedShape.points[0].x;
+          this.dragOffsetY = y - this.selectedShape.points[0].y;
         }
-        if (e.button === 0) {          // left‑click draws
-            this.mouseDownHandler(e);
-        } else if (e.button === 1 || e.button === 2) { // middle/right pan
-            this.isPanning = true;
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
+        else if (this.selectedShape.type === "text") {
+          this.dragOffsetX = x - this.selectedShape.x;
+          this.dragOffsetY = y - this.selectedShape.y;
         }
+        // draw to show selection immediately
+        this.drawVisible()
+        return;
+      }
     }
+    this.clicked = true
+    this.startX = x
+    this.startY = y
 
-    panMouseUp=(e:MouseEvent)=>{
-        if (e.button === 0) this.mouseUpHandler(e);
-        this.isPanning = false;
+    if (this.selectedTool === "pencil") {
+      this.currentPath = [{ x, y }]
+      // set preview to initial pencil stroke
+      this.previewShape = { id: "preview", type: "pencil", points: [...this.currentPath] } as Shape
+      this.drawVisible()
     }
+  }
 
-    panMouseMove=(e:MouseEvent)=>{
-        if (this.isPanning) {
-            const dx = e.clientX - this.lastPanX;
-            const dy = e.clientY - this.lastPanY;
-            this.offsetX += dx;
-            this.offsetY += dy;
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
-            this.clearCanvas();
-            return;
+  mouseMoveHandler = (e: MouseEvent) => {
+    const { x, y } = this.screenToWorld(e.clientX, e.clientY);
+    if (this.isDragging && this.selectedShape) {
+      if (this.selectedShape.type === "rect") {
+        this.selectedShape.x = x - this.dragOffsetX;
+        this.selectedShape.y = y - this.dragOffsetY;
+      }
+      else if (this.selectedShape.type === "circle") {
+        this.selectedShape.centerX = x - this.dragOffsetX;
+        this.selectedShape.centerY = y - this.dragOffsetY;
+      }
+      else if (this.selectedShape.type === "pencil") {
+        const dx = x - this.dragOffsetX - this.selectedShape.points[0].x;
+        const dy = y - this.dragOffsetY - this.selectedShape.points[0].y;
+        for (const point of this.selectedShape.points) {
+          point.x += dx;
+          point.y += dy;
         }
-        this.mouseMoveHandler(e)
-    }
+      }
+      else if (this.selectedShape.type === "text") {
+        this.selectedShape.x = x - this.dragOffsetX;
+        this.selectedShape.y = y - this.dragOffsetY;
+      }
 
-    undo(){
-        if (this.existingShapes.length === 0) return;
-        
-        const shape = this.existingShapes.pop()!;
-        console.log("Local undo", shape.id);
-        
-        this.redoStack.push(shape);
-        this.lastUndoId = shape.id; // Track this undo
-        this.clearCanvas(); // Immediate UI update
-        
-        if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: "shape_undo",
-                roomId: this.roomId,
-                shapeId: shape.id,
-            }));
+      // show dragging update immediately (permanent not changed yet)
+      this.drawVisible()
+      return;
+    }
+    if (this.clicked) {
+      const width = x - this.startX;
+      const height = y - this.startY;
+
+      const selectedTool = this.selectedTool
+
+      // Instead of clearing & drawing whole canvas every mouse move,
+      // update previewShape and ask render loop to composite.
+      if (selectedTool === "rect") {
+        this.previewShape = {
+          id: "preview",
+          type: "rect",
+          x: this.startX,
+          y: this.startY,
+          width,
+          height
+        } as any
+      }
+      else if (selectedTool === "circle") {
+        const radius = Math.abs(Math.max(width, height) / 2);
+        const centerX = this.startX + radius
+        const centerY = this.startY + radius
+        this.previewShape = {
+          id: "preview",
+          type: "circle",
+          centerX,
+          centerY,
+          radius
+        } as any
+      }
+      else if (selectedTool === "pencil") {
+        // Throttle point additions to avoid spamming updates
+        const now = performance.now()
+        if (now - this.lastPencilTime >= this.pencilThrottleMs) {
+          this.lastPencilTime = now
+          this.currentPath.push({ x, y })
+          this.previewShape = { id: "preview", type: "pencil", points: [...this.currentPath] } as Shape
         }
+      }
+      else if (selectedTool === "line" || selectedTool === "arrow") {
+        let endX = x;
+        let endY = y;
+        if (e.shiftKey) {
+          ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
+        }
+        this.previewShape = {
+          id: "preview",
+          type: selectedTool,
+          startX: this.startX,
+          startY: this.startY,
+          endX,
+          endY
+        } as any
+      }
+
+      // mark needs redraw and draw now (fast; drawVisible is optimized)
+      this.needsRedraw = true
+      this.drawVisible()
+    }
+  }
+
+  private renderLoop = () => {
+    // if permanent is dirty, redraw (happens rarely)
+    if (this.permanentDirty) {
+      this.redrawPermanent()
     }
 
-    wheelZoom=(e:any)=>{
-        e.preventDefault();
-        const zoomAmount = -e.deltaY * 0.001;
-        this.scale *= 1 + zoomAmount;
-        this.scale = Math.max(0.2, Math.min(5, this.scale));
-        this.clearCanvas();
+    if (this.needsRedraw) {
+      this.drawVisible()
+      this.needsRedraw = false
     }
+    requestAnimationFrame(this.renderLoop)
+  }
 
-    blockMenu=(e:any)=>{e.preventDefault()}
+  initMouseHandlers() {
+    this.canvas.addEventListener("mousedown", this.panMouseDown);
+    this.canvas.addEventListener("mouseup", this.panMouseUp);
+    this.canvas.addEventListener("mousemove", this.panMouseMove);
+    this.canvas.addEventListener("wheel", this.wheelZoom, { passive: false });
+    // Prevent context menu on right-click
+    this.canvas.addEventListener("contextmenu", this.blockMenu);
+  }
+  panMouseDown = (e: MouseEvent) => {
+    // For text tool or select tool, always handle left click first
+    if ((this.selectedTool === "text" || this.selectedTool === "select") && e.button === 0) {
+      this.mouseDownHandler(e);
+      return;
+    }
+    if (e.button === 0) {          // left-click draws
+      this.mouseDownHandler(e);
+    } else if (e.button === 1 || e.button === 2) { // middle/right pan
+      this.isPanning = true;
+      this.lastPanX = e.clientX;
+      this.lastPanY = e.clientY;
+    }
+  }
 
-    redo(){
-         if (this.redoStack.length === 0) return;
-        
-        const shape = this.redoStack.pop()!;
-        console.log("Local redo", shape.id);
-        
+  panMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) this.mouseUpHandler(e);
+    this.isPanning = false;
+  }
+
+  panMouseMove = (e: MouseEvent) => {
+    if (this.isPanning) {
+      const dx = e.clientX - this.lastPanX;
+      const dy = e.clientY - this.lastPanY;
+      this.offsetX += dx;
+      this.offsetY += dy;
+      this.lastPanX = e.clientX;
+      this.lastPanY = e.clientY;
+      // panning moves view -> redraw visible
+      this.drawVisible();
+      return;
+    }
+    this.mouseMoveHandler(e)
+  }
+
+  undo() {
+    if (this.existingShapes.length === 0) return;
+
+    const shape = this.existingShapes.pop()!;
+    console.log("Local undo", shape.id);
+
+    this.redoStack.push(shape);
+    this.lastUndoId = shape.id; // Track this undo
+    // mark permanent dirty -> redraw
+    this.permanentDirty = true
+    this.redrawPermanent()
+    this.drawVisible()
+
+    if (this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({
+        type: "shape_undo",
+        roomId: this.roomId,
+        shapeId: shape.id,
+      }));
+    }
+  }
+
+  wheelZoom = (e: any) => {
+    e.preventDefault();
+    const zoomAmount = -e.deltaY * 0.001;
+    this.scale *= 1 + zoomAmount;
+    this.scale = Math.max(0.2, Math.min(5, this.scale));
+    // redraw visible after zoom
+    this.drawVisible()
+  }
+
+  blockMenu = (e: any) => { e.preventDefault() }
+
+  redo() {
+    if (this.redoStack.length === 0) return;
+
+    const shape = this.redoStack.pop()!;
+    console.log("Local redo", shape.id);
+
+    this.existingShapes.push(shape);
+    this.lastRedoId = shape.id; // Track this redo
+    // mark permanent dirty -> redraw
+    this.permanentDirty = true
+    this.redrawPermanent()
+    this.drawVisible()
+
+    if (this.socket.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({
+        type: "shape_redo",
+        roomId: this.roomId,
+        shapeId: shape.id,
+        shape // Send full shape data
+      }));
+    }
+  }
+
+  private createTextInput(screenX: number, screenY: number) {
+    // Create textarea element
+    const ta = document.createElement('textarea');
+    // Set initial content to ensure it has size
+    ta.value = 'Text here';
+    // Add debug styles to make it highly visible
+    Object.assign(ta.style, {
+      position: 'fixed',
+      top: `${screenY}px`,
+      left: `${screenX}px`,
+      width: '200px',
+      height: '24px', // Set explicit height
+      zIndex: '2147483647',
+      backgroundColor: 'yellow',
+      color: 'black',
+      border: '3px solid red',
+      padding: '8px',
+      fontSize: '16px',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+      resize: 'none',
+      outline: 'none',
+      pointerEvents: 'auto',
+      display: 'block', // Ensure it's visible
+    });
+    // Create a container to ensure proper rendering
+    const container = document.createElement('div');
+    Object.assign(container.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      zIndex: '2147483647',
+      pointerEvents: 'none',
+    });
+    container.appendChild(ta);
+    document.body.appendChild(container);
+    console.log('Textarea container appended to body');
+    // Add a slight delay before focusing to prevent immediate blur
+    setTimeout(() => {
+      ta.focus();
+      ta.select();
+      console.log('Textarea focused');
+    }, 10);
+    let committed = false
+    const commit = () => {
+      if (committed) return;
+      committed = true
+      console.log('Committing text:', ta.value);
+      const txt = ta.value.trim();
+      if (txt) {
+        const world = this.screenToWorld(screenX, screenY);
+        const shape: Shape = {
+          id: nanoid(),
+          type: "text",
+          x: world.x,
+          y: world.y,
+          text: txt,
+          font: "16px Arial"
+        };
         this.existingShapes.push(shape);
-        this.lastRedoId = shape.id; // Track this redo
-        this.clearCanvas(); // Immediate UI update
-        
+        this.undoStack.push(shape);
+        this.redoStack = [];
+        // mark permanent dirty -> redraw
+        this.permanentDirty = true
+        this.redrawPermanent()
+        this.drawVisible()
         if (this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({
-                type: "shape_redo",
-                roomId: this.roomId,
-                shapeId: shape.id,
-                shape // Send full shape data
-            }));
+          this.socket.send(JSON.stringify({
+            type: "shape_add",
+            roomId: this.roomId,
+            shape,
+          }));
         }
-    }
+      }
+      if (container.parentNode) container.remove();
+      ta.removeEventListener('blur', commit);
+      ta.removeEventListener('keydown', handleKeydown);
+    };
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        commit();
+      }
+    };
+    ta.addEventListener('blur', commit);
+    ta.addEventListener('keydown', handleKeydown);
+    // // Prevent clicks on textarea from propagating to canvas
+    ta.addEventListener('mousedown', e => e.stopPropagation());
+    ta.addEventListener('mouseup', e => e.stopPropagation());
+  }
 
-    private createTextInput(screenX: number, screenY: number) {
-        // Create textarea element
-        const ta = document.createElement('textarea');
-        // Set initial content to ensure it has size
-        ta.value = 'Text here';
-        // Add debug styles to make it highly visible
-        Object.assign(ta.style, {
-            position: 'fixed',
-            top: `${screenY}px`,
-            left: `${screenX}px`,
-            width: '200px',
-            height: '24px', // Set explicit height
-            zIndex: '2147483647',
-            backgroundColor: 'yellow',
-            color: 'black',
-            border: '3px solid red',
-            padding: '8px',
-            fontSize: '16px',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-            resize: 'none',
-            outline: 'none',
-            pointerEvents: 'auto',
-            display: 'block', // Ensure it's visible
-        });
-        // Create a container to ensure proper rendering
-        const container = document.createElement('div');
-        Object.assign(container.style, {
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            zIndex: '2147483647',
-            pointerEvents: 'none',
-        });
-        container.appendChild(ta);
-        document.body.appendChild(container);
-        console.log('Textarea container appended to body');
-        // Add a slight delay before focusing to prevent immediate blur
-        setTimeout(() => {
-            ta.focus();
-            ta.select();
-            console.log('Textarea focused');
-        }, 10);
-        let committed=false
-        const commit = () => {
-            if (committed) return;
-            committed=true
-            console.log('Committing text:', ta.value);
-            const txt = ta.value.trim();
-            if (txt) {
-                const world = this.screenToWorld(screenX, screenY);
-                const shape: Shape = {
-                    id: nanoid(),
-                    type: "text",
-                    x: world.x,
-                    y: world.y,
-                    text: txt,
-                    font: "16px Arial"
-                };
-                this.existingShapes.push(shape);
-                this.undoStack.push(shape);
-                this.redoStack = [];
-                this.clearCanvas();
-                if (this.socket.readyState === WebSocket.OPEN) {
-                    this.socket.send(JSON.stringify({
-                    type: "shape_add",
-                    roomId: this.roomId,
-                    shape,
-                    }));
-                }
-            }
-            if(container.parentNode) container.remove();
-            ta.removeEventListener('blur', commit);
-            ta.removeEventListener('keydown', handleKeydown);
-        };
-        const handleKeydown = (e: KeyboardEvent) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                commit();
-            }
-        };
-        ta.addEventListener('blur', commit);
-        ta.addEventListener('keydown', handleKeydown);
-        // // Prevent clicks on textarea from propagating to canvas
-        ta.addEventListener('mousedown', e => e.stopPropagation());
-        ta.addEventListener('mouseup', e => e.stopPropagation());
-    }
-
-    private getShapeAt(x: number, y: number): Shape | null {
+  private getShapeAt(x: number, y: number): Shape | null {
     // We'll check shapes in reverse order (top to bottom in z-order)
-        for (let i = this.existingShapes.length - 1; i >= 0; i--) {
-            const shape = this.existingShapes[i];
-            if (shape.type === "rect") {
-                if (x >= shape.x && x <= shape.x + shape.width &&
-                    y >= shape.y && y <= shape.y + shape.height) {
-                    return shape;
-                }
-            } 
-            else if (shape.type === "circle") {
-                const dx = x - shape.centerX;
-                const dy = y - shape.centerY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance <= shape.radius) {
-                    return shape;
-                }
-            }
-            else if (shape.type === "pencil") {
-                // Simple point-in-path check (could be more sophisticated)
-                for (const point of shape.points) {
-                    const dx = x - point.x;
-                    const dy = y - point.y;
-                    if (dx * dx + dy * dy < 100) { // 10px radius
-                        return shape;
-                    }
-                }
-            }
-            else if (shape.type === "text") {
-                // Approximate text bounding box
-                this.ctx.font = shape.font;
-                const metrics = this.ctx.measureText(shape.text);
-                if (x >= shape.x && x <= shape.x + metrics.width &&
-                    y >= shape.y && y <= shape.y + 20) { // Approx text height
-                    return shape;
-                }
-            }
+    for (let i = this.existingShapes.length - 1; i >= 0; i--) {
+      const shape = this.existingShapes[i];
+      if (shape.type === "rect") {
+        if (x >= shape.x && x <= shape.x + shape.width &&
+          y >= shape.y && y <= shape.y + shape.height) {
+          return shape;
         }
-        return null;
+      }
+      else if (shape.type === "circle") {
+        const dx = x - shape.centerX;
+        const dy = y - shape.centerY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance <= shape.radius) {
+          return shape;
+        }
+      }
+      else if (shape.type === "pencil") {
+        // Simple point-in-path check (could be more sophisticated)
+        for (const point of shape.points) {
+          const dx = x - point.x;
+          const dy = y - point.y;
+          if (dx * dx + dy * dy < 100) { // 10px radius
+            return shape;
+          }
+        }
+      }
+      else if (shape.type === "text") {
+        // Approximate text bounding box
+        this.ctx.font = shape.font;
+        const metrics = this.ctx.measureText(shape.text);
+        if (x >= shape.x && x <= shape.x + metrics.width &&
+          y >= shape.y && y <= shape.y + 20) { // Approx text height
+          return shape;
+        }
+      }
     }
+    return null;
+  }
 
-    private getShapePosition(shape: Shape): { x: number, y: number } {
-        if (shape.type === "rect") return { x: shape.x, y: shape.y };
-        if (shape.type === "circle") return { x: shape.centerX, y: shape.centerY };
-        if (shape.type === "pencil") return { x: shape.points[0].x, y: shape.points[0].y };
-        if (shape.type === "text") return { x: shape.x, y: shape.y };
-        return { x: 0, y: 0 };
+  private getShapePosition(shape: Shape): { x: number, y: number } {
+    if (shape.type === "rect") return { x: shape.x, y: shape.y };
+    if (shape.type === "circle") return { x: shape.centerX, y: shape.centerY };
+    if (shape.type === "pencil") return { x: shape.points[0].x, y: shape.points[0].y };
+    if (shape.type === "text") return { x: shape.x, y: shape.y };
+    return { x: 0, y: 0 };
+  }
+
+  exportToJPEG() {
+    // Create a temporary canvas for high-quality export
+    const exportCanvas = document.createElement('canvas');
+    const exportCtx = exportCanvas.getContext('2d');
+    if (!exportCtx) {
+      console.error('Failed to create export canvas context');
+      return;
     }
+    // Set export dimensions (higher resolution)
+    const scaleFactor = 2; // For higher quality
+    exportCanvas.width = this.canvas.width * scaleFactor;
+    exportCanvas.height = this.canvas.height * scaleFactor;
+    // Fill background (since original canvas might be transparent)
+    exportCtx.fillStyle = 'white';
+    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    // Apply the same transformations but scaled up
+    exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
+    exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
+    // IMPORTANT: Draw all shapes in the correct order
+    for (const shape of this.existingShapes) {
+      // Create a copy of the shape to avoid modifying the original
+      const shapeCopy = { ...shape };
+      // Draw the shape on the export canvas
+      if (shapeCopy.type === "rect") {
+        exportCtx.strokeStyle = "black";
+        exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
+      }
+      else if (shapeCopy.type === "circle") {
+        exportCtx.beginPath();
+        exportCtx.arc(shapeCopy.centerX, shapeCopy.centerY, shapeCopy.radius, 0, Math.PI * 2);
+        exportCtx.stroke();
+      }
+      else if (shapeCopy.type === "pencil") {
+        if (!shapeCopy.points || shapeCopy.points.length === 0) continue;
+        exportCtx.beginPath();
+        const [first, ...rest] = shapeCopy.points;
+        if (!first) continue;
+        exportCtx.moveTo(first.x, first.y);
+        for (const pt of rest) exportCtx.lineTo(pt.x, pt.y);
+        exportCtx.stroke();
+        exportCtx.closePath();
+      }
+      else if (shapeCopy.type === "text") {
+        exportCtx.fillStyle = "black";
+        exportCtx.font = "16px Arial";
+        exportCtx.textBaseline = "top";
+        exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
+      }
+      else if (shapeCopy.type === "line") {
+        exportCtx.beginPath()
+        exportCtx.moveTo(shapeCopy.startX, shapeCopy.startY)
+        exportCtx.lineTo(shapeCopy.endX, shapeCopy.endY)
+        exportCtx.stroke();
+        exportCtx.closePath();
+      }
+      else if (shapeCopy.type === "arrow") {
+        exportCtx.beginPath();
+        exportCtx.moveTo(shapeCopy.startX, shapeCopy.startY);
+        exportCtx.lineTo(shapeCopy.endX, shapeCopy.endY);
+        exportCtx.stroke();
 
-    exportToJPEG() {
-        // Create a temporary canvas for high-quality export
-        const exportCanvas = document.createElement('canvas');
-        const exportCtx = exportCanvas.getContext('2d');
-        if (!exportCtx) {
-            console.error('Failed to create export canvas context');
-            return;
-        }
-        // Set export dimensions (higher resolution)
-        const scaleFactor = 2; // For higher quality
-        exportCanvas.width = this.canvas.width * scaleFactor;
-        exportCanvas.height = this.canvas.height * scaleFactor;
-        // Fill background (since original canvas might be transparent)
-        exportCtx.fillStyle = 'white';
-        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-        // Apply the same transformations but scaled up
-        exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
-        exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
-        // IMPORTANT: Draw all shapes in the correct order
-        for (const shape of this.existingShapes) {
-            // Create a copy of the shape to avoid modifying the original
-            const shapeCopy = {...shape};
-            // Draw the shape on the export canvas
-            if (shapeCopy.type === "rect") {
-            exportCtx.strokeStyle = "black";
-            exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
-            }
-            else if (shapeCopy.type === "circle") {
-            exportCtx.beginPath();
-            exportCtx.arc(shapeCopy.centerX, shapeCopy.centerY, shapeCopy.radius, 0, Math.PI * 2);
-            exportCtx.stroke();
-            }
-            else if (shapeCopy.type === "pencil") {
-            if (!shapeCopy.points || shapeCopy.points.length === 0) continue;
-            exportCtx.beginPath();
-            const [first, ...rest] = shapeCopy.points;
-            if (!first) continue; 
-            exportCtx.moveTo(first.x, first.y);
-            for (const pt of rest) exportCtx.lineTo(pt.x, pt.y);
-            exportCtx.stroke();
-            exportCtx.closePath();
-            }
-            else if (shapeCopy.type === "text") {
-            exportCtx.fillStyle = "black";
-            exportCtx.font = "16px Arial";
-            exportCtx.textBaseline = "top";
-            exportCtx.fillText(shapeCopy.text, shapeCopy.x, shapeCopy.y);
-            }
-            else if(shapeCopy.type==="line"){
-                exportCtx.beginPath()
-                exportCtx.moveTo(shapeCopy.startX,shapeCopy.startY)
-                exportCtx.lineTo(shapeCopy.endX,shapeCopy.endY)
-                 exportCtx.stroke();
-                exportCtx.closePath();
-            }
-            else if(shapeCopy.type==="arrow"){
-                exportCtx.beginPath();
-                exportCtx.moveTo(shapeCopy.startX, shapeCopy.startY);
-                exportCtx.lineTo(shapeCopy.endX, shapeCopy.endY);
-                exportCtx.stroke();
+        // Arrowhead
+        const angle = Math.atan2(shapeCopy.endY - shapeCopy.startY, shapeCopy.endX - shapeCopy.startX);
+        const headLength = 10;
+        exportCtx.beginPath();
+        exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
+        exportCtx.lineTo(
+          shapeCopy.endX - headLength * Math.cos(angle - Math.PI / 6),
+          shapeCopy.endY - headLength * Math.sin(angle - Math.PI / 6)
+        );
+        exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
+        exportCtx.lineTo(
+          shapeCopy.endX - headLength * Math.cos(angle + Math.PI / 6),
+          shapeCopy.endY - headLength * Math.sin(angle + Math.PI / 6)
+        );
+        exportCtx.stroke();
+      }
 
-                // Arrowhead
-                const angle = Math.atan2(shapeCopy.endY - shapeCopy.startY, shapeCopy.endX - shapeCopy.startX);
-                const headLength = 10;
-                exportCtx.beginPath();
-                exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
-                exportCtx.lineTo(
-                    shapeCopy.endX - headLength * Math.cos(angle - Math.PI / 6),
-                    shapeCopy.endY - headLength * Math.sin(angle - Math.PI / 6)
-                );
-                exportCtx.moveTo(shapeCopy.endX, shapeCopy.endY);
-                exportCtx.lineTo(
-                    shapeCopy.endX - headLength * Math.cos(angle + Math.PI / 6),
-                    shapeCopy.endY - headLength * Math.sin(angle + Math.PI / 6)
-                );
-                exportCtx.stroke();
-            }
+    }
+    // Create download link
+    const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
+    const link = document.createElement('a');
+    link.href = dataURL;
+    link.download = `Inkspire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+    // Clean up after a short delay
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
+  }
 
-        }
-        // Create download link
-        const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
-        const link = document.createElement('a');
-        link.href = dataURL;
-        link.download = `Inkspire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
-        // Trigger download
-        document.body.appendChild(link);
-        link.click();
-        // Clean up after a short delay
-        setTimeout(() => {
-            document.body.removeChild(link);
-        }, 100);
-    } 
-
-
-    /** Snap end‑point to the nearest 45‑degree increment. */
-private snapAngle(startX: number,startY: number,endX: number,endY: number) {
+  /** Snap end-point to the nearest 45-degree increment. */
+  private snapAngle(startX: number, startY: number, endX: number, endY: number) {
     const dx = endX - startX;
     const dy = endY - startY;
     const length = Math.hypot(dx, dy);
     const rawAngle = Math.atan2(dy, dx);
     const snappedAngle = Math.round(rawAngle / (Math.PI / 4)) * (Math.PI / 4);
     return {
-        x: startX + Math.cos(snappedAngle) * length,
-        y: startY + Math.sin(snappedAngle) * length
+      x: startX + Math.cos(snappedAngle) * length,
+      y: startY + Math.sin(snappedAngle) * length
     };
-}
+  }
 
 }

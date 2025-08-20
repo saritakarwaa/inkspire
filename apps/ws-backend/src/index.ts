@@ -25,7 +25,8 @@ wss.on('headers', (headers) => {
   headers.push('Access-Control-Allow-Origin: *');
   // (You can remove the credentials header if you’re not using cookies here.)
 });
-//ugly state management using a global variable
+
+//ugly state management using a global variable,Keeps track of which user is connected and which rooms they’ve joined.
 interface User{
     ws:WebSocket
     rooms:string[]
@@ -49,7 +50,7 @@ function checkUser(token:string):string | null{
     }
 }
 
-function broadcast(roomId:string | number,payload:unknown){
+function broadcast(roomId:string | number,payload:unknown){ //Sends messages to only those users who are in that room.
     const roomKey=String(roomId)
     const message=JSON.stringify(payload)
     users.forEach((user)=>{

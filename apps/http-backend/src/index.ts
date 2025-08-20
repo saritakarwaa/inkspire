@@ -95,7 +95,7 @@ app.post("/room",middleware,async(req,res)=>{
    }
 })
 
-app.get("/chats/:roomId",async(req,res)=>{
+app.get("/chats/:roomId",async(req,res)=>{  //gets all messages in a room
     console.log("Incoming roomId:", req.params.roomId)
      const roomId=Number(req.params.roomId)
     if (isNaN(roomId)) {
@@ -114,7 +114,7 @@ app.get("/chats/:roomId",async(req,res)=>{
     }
 })
 
-app.get("/room/:slug",async(req,res)=>{
+app.get("/room/:slug",async(req,res)=>{ //retrives room details by slug
      const slug=req.params.slug
    try{
     const room= await prismaClient.room.findUnique({

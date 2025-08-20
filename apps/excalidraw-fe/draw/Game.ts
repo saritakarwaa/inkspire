@@ -28,6 +28,8 @@ export class Game {
   private lastPanX = 0
   private lastPanY = 0
 
+  private panPositions: { x: number, y: number, t: number }[] = []
+
   private clicked: boolean
   private startX: number
   private startY: number
@@ -47,12 +49,20 @@ export class Game {
 
   // rendering flags / preview
   private needsRedraw = true
-  private permanentDirty = true // when true, permanentCanvas must be re-rendered from existingShapes
+  private permanentDirty = true
   private previewShape: Shape | null = null
 
   // pencil throttle
   private lastPencilTime = 0
-  private pencilThrottleMs = 8 // ~125Hz cap on adding points to currentPath
+  private pencilThrottleMs = 8 // ~125Hz
+
+  // zoom animation state
+  private zoomAnimId: number | null = null
+  private zoomDurationMs = 260
+  private zoomEasing = (t: number) => 1 - Math.pow(1 - t, 3) // easeOut-like
+
+  // pan momentum state
+  private momentumId: number | null = null
 
   constructor(canvas: HTMLCanvasElement, private parent: HTMLElement, roomId: string, socket: WebSocket) {
     const isDarkTheme = document.documentElement.classList.contains("dark");
@@ -69,6 +79,7 @@ export class Game {
 
     // create offscreen permanent canvas
     this.permanentCanvas = document.createElement('canvas')
+    // initialize sizes (will be updated in resizeCanvas)
     this.permanentCanvas.width = this.canvas.width = window.innerWidth
     this.permanentCanvas.height = this.canvas.height = window.innerHeight
     this.permanentCtx = this.permanentCanvas.getContext('2d')!
@@ -80,26 +91,53 @@ export class Game {
     this.renderLoop()
   }
 
-  resizeCanvas() { // resize canvas dynamically
-    // set sizes initially already in constructor; keep listener to update both
+  /** Convert client coordinates (mouse event clientX/clientY) into canvas pixel coordinates.
+   *  This correctly handles page scroll, CSS scaling, and different backing sizes.
+   */
+  private getCanvasPoint(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect()
+    // map client coordinate into canvas internal coordinate system
+    const x = (clientX - rect.left) * (this.canvas.width / rect.width)
+    const y = (clientY - rect.top) * (this.canvas.height / rect.height)
+    return { x, y }
+  }
+
+  /** Convert canvas pixel coords to world coords using current offset & scale.
+   *  We treat offsetX/offsetY and scale in *canvas pixels* (not client pixels).
+   */
+  screenToWorld(canvasX: number, canvasY: number) {
+    return {
+      x: (canvasX - this.offsetX) / this.scale,
+      y: (canvasY - this.offsetY) / this.scale
+    }
+  }
+
+  worldToScreen(worldX: number, worldY: number) {
+    return {
+      x: worldX * this.scale + this.offsetX,
+      y: worldY * this.scale + this.offsetY
+    }
+  }
+
+  resizeCanvas() {
     window.addEventListener("resize", () => {
-      // preserve current sizes
-      this.canvas.width = window.innerWidth
-      this.canvas.height = window.innerHeight
+      // preserve previous permanent content by re-rendering from shapes after resize
+      const w = window.innerWidth
+      const h = window.innerHeight
+      // set internal canvas pixel size to CSS size (no DPR scaling here to keep math simple)
+      this.canvas.width = w
+      this.canvas.height = h
+      this.canvas.style.width = `${w}px`
+      this.canvas.style.height = `${h}px`
+
       this.permanentCanvas.width = this.canvas.width
       this.permanentCanvas.height = this.canvas.height
-      // mark permanent for re-render and draw immediately
+
+      // ensure we re-render the permanent layer
       this.permanentDirty = true
       this.redrawPermanent()
       this.drawVisible()
     })
-  }
-
-  screenToWorld(x: number, y: number) {
-    return {
-      x: (x - this.offsetX) / this.scale,
-      y: (y - this.offsetY) / this.scale
-    }
   }
 
   destroy() {
@@ -114,7 +152,6 @@ export class Game {
   }
   async init() {
     this.existingShapes = await getExistingShapes(this.roomId)
-    // initial permanent draw
     this.permanentDirty = true
     this.redrawPermanent()
     this.drawVisible()
@@ -136,7 +173,6 @@ export class Game {
         }
       } else if (message.type === "shape_undo") {
         if (message.shapeId !== this.lastUndoId) {
-          console.log("Handling remote undo");
           const shapeIndex = this.existingShapes.findIndex(s => s.id === message.shapeId);
           if (shapeIndex !== -1) {
             const [shape] = this.existingShapes.splice(shapeIndex, 1);
@@ -147,7 +183,6 @@ export class Game {
         }
       } else if (message.type === "shape_redo") {
         if (message.shapeId !== this.lastRedoId) {
-          console.log("Handling remote redo");
           if (message.shape && !this.existingShapes.some(s => s.id === message.shape.id)) {
             this.existingShapes.push(message.shape);
             this.undoStack.push(message.shape);
@@ -181,23 +216,18 @@ export class Game {
           this.permanentDirty = true;
         }
       }
-      // Re-render permanent (batched) and update visible canvas
+      // batch redraw after messages
       this.redrawPermanent()
       this.drawVisible()
     }
   }
 
-  /** Re-draws all existingShapes into the offscreen permanent canvas.
-   *  This is done only when permanentDirty is true to avoid repeated full redraws.
-   */
   private redrawPermanent() {
-    // Render to permanent context in world coordinates (no transforms)
+    // draw all shapes into permanent (world coords)
     this.permanentCtx.setTransform(1, 0, 0, 1, 0, 0)
-    // clear background
     this.permanentCtx.fillStyle = document.documentElement.classList.contains("dark") ? "#000" : "#fff";
     this.permanentCtx.fillRect(0, 0, this.permanentCanvas.width, this.permanentCanvas.height);
 
-    // draw all shapes onto permanentCtx using world coords
     for (const shape of this.existingShapes) {
       this.drawShape(shape, this.permanentCtx)
     }
@@ -206,38 +236,33 @@ export class Game {
     this.needsRedraw = true
   }
 
-  /** Draw visible canvas by composing background -> transforms -> permanent -> preview */
   private drawVisible() {
-    // If permanent is dirty, ensure it's redrawn first
     if (this.permanentDirty) this.redrawPermanent()
 
-    // reset transform, fill background
+    // reset transform and draw background
     this.ctx.setTransform(1, 0, 0, 1, 0, 0)
     this.ctx.fillStyle = document.documentElement.classList.contains("dark") ? "#000" : "#fff";
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // apply pan/zoom
+    // apply pan & zoom (offsetX/Y are canvas pixels)
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0)
     this.ctx.translate(this.offsetX, this.offsetY)
     this.ctx.scale(this.scale, this.scale)
 
-    // draw the entire permanent layer in one image draw (fast)
-    // permanentCanvas contains world coords drawn at 0,0
+    // draw permanent (already in world coords)
     this.ctx.drawImage(this.permanentCanvas, 0, 0)
 
-    // draw preview shape on top (if any)
+    // preview
     if (this.previewShape) {
       this.drawShape(this.previewShape, this.ctx)
     }
 
-    // if dragging a shape, draw that shape on top to show live movement
     if (this.isDragging && this.selectedShape) {
       this.drawShape(this.selectedShape, this.ctx)
     }
   }
 
   clearCanvas() {
-    // Keep semantics similar to previous: immediate visual update
-    // but use optimized permanent + preview pipeline
     if (this.permanentDirty) {
       this.redrawPermanent()
     }
@@ -246,7 +271,7 @@ export class Game {
   }
 
   drawShape(shape: Shape, ctx: CanvasRenderingContext2D = this.ctx) {
-    // Keep style setting similar to your original code
+    // same style logic as before
     if (this.selectedTool === "select" && this.selectedShape?.id === shape.id) {
       ctx.strokeStyle = (this.selectedTool === "select" && this.selectedShape?.id === shape.id) ? "blue" : this.strokeColor;
       ctx.lineWidth = 2;
@@ -298,7 +323,6 @@ export class Game {
       ctx.lineTo(endX, endY);
       ctx.stroke();
 
-      // draw arrow head
       ctx.beginPath();
       ctx.moveTo(endX, endY);
       ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6), endY - headLength * Math.sin(angle - Math.PI / 6));
@@ -313,7 +337,6 @@ export class Game {
     if (this.isDragging && this.selectedShape) {
       this.isDragging = false;
 
-      // Notify other clients about the move
       if (this.socket.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({
           type: "shape_move",
@@ -323,14 +346,16 @@ export class Game {
         }));
       }
 
-      // after moving, mark permanent dirty and redraw permanent
       this.permanentDirty = true
       this.redrawPermanent()
       this.drawVisible()
       return;
     }
+
+    // use canvas-local coords
+    const canv = this.getCanvasPoint(e.clientX, e.clientY)
     this.clicked = false
-    const { x, y } = this.screenToWorld(e.clientX, e.clientY);
+    const { x, y } = this.screenToWorld(canv.x, canv.y);
     const width = x - this.startX;
     const height = y - this.startY;
 
@@ -356,10 +381,9 @@ export class Game {
       this.previewShape = null
     }
     else if (selectedTool === "line" || selectedTool === "arrow") {
-      // <-- insert snapping before you store x/y
       let endX = x;
       let endY = y;
-      if (e.shiftKey) {
+      if ((e as MouseEvent).shiftKey) {
         ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
       }
 
@@ -375,7 +399,6 @@ export class Game {
     }
 
     if (!shape) {
-      // ensure preview cleared + visible updated
       this.previewShape = null
       this.drawVisible()
       return
@@ -396,14 +419,15 @@ export class Game {
       console.warn("WebSocket is not open, cannot send shape");
     }
 
-    // mark permanent dirty and re-render permanent once (fast)
     this.permanentDirty = true
     this.redrawPermanent()
     this.drawVisible()
   }
 
   mouseDownHandler = (e: MouseEvent) => {
-    const { x, y } = this.screenToWorld(e.clientX, e.clientY)
+    const canv = this.getCanvasPoint(e.clientX, e.clientY)
+    const { x, y } = this.screenToWorld(canv.x, canv.y)
+
     if (this.selectedTool === "text") {
       this.createTextInput(e.clientX, e.clientY)
       return
@@ -421,7 +445,6 @@ export class Game {
           this.dragOffsetY = y - this.selectedShape.centerY;
         }
         else if (this.selectedShape.type === "pencil") {
-          // For pencil, use first point as reference
           this.dragOffsetX = x - this.selectedShape.points[0].x;
           this.dragOffsetY = y - this.selectedShape.points[0].y;
         }
@@ -429,7 +452,6 @@ export class Game {
           this.dragOffsetX = x - this.selectedShape.x;
           this.dragOffsetY = y - this.selectedShape.y;
         }
-        // draw to show selection immediately
         this.drawVisible()
         return;
       }
@@ -440,14 +462,15 @@ export class Game {
 
     if (this.selectedTool === "pencil") {
       this.currentPath = [{ x, y }]
-      // set preview to initial pencil stroke
       this.previewShape = { id: "preview", type: "pencil", points: [...this.currentPath] } as Shape
       this.drawVisible()
     }
   }
 
   mouseMoveHandler = (e: MouseEvent) => {
-    const { x, y } = this.screenToWorld(e.clientX, e.clientY);
+    const canv = this.getCanvasPoint(e.clientX, e.clientY)
+    const { x, y } = this.screenToWorld(canv.x, canv.y)
+
     if (this.isDragging && this.selectedShape) {
       if (this.selectedShape.type === "rect") {
         this.selectedShape.x = x - this.dragOffsetX;
@@ -470,7 +493,6 @@ export class Game {
         this.selectedShape.y = y - this.dragOffsetY;
       }
 
-      // show dragging update immediately (permanent not changed yet)
       this.drawVisible()
       return;
     }
@@ -478,11 +500,7 @@ export class Game {
       const width = x - this.startX;
       const height = y - this.startY;
 
-      const selectedTool = this.selectedTool
-
-      // Instead of clearing & drawing whole canvas every mouse move,
-      // update previewShape and ask render loop to composite.
-      if (selectedTool === "rect") {
+      if (this.selectedTool === "rect") {
         this.previewShape = {
           id: "preview",
           type: "rect",
@@ -492,7 +510,7 @@ export class Game {
           height
         } as any
       }
-      else if (selectedTool === "circle") {
+      else if (this.selectedTool === "circle") {
         const radius = Math.abs(Math.max(width, height) / 2);
         const centerX = this.startX + radius
         const centerY = this.startY + radius
@@ -504,8 +522,7 @@ export class Game {
           radius
         } as any
       }
-      else if (selectedTool === "pencil") {
-        // Throttle point additions to avoid spamming updates
+      else if (this.selectedTool === "pencil") {
         const now = performance.now()
         if (now - this.lastPencilTime >= this.pencilThrottleMs) {
           this.lastPencilTime = now
@@ -513,15 +530,15 @@ export class Game {
           this.previewShape = { id: "preview", type: "pencil", points: [...this.currentPath] } as Shape
         }
       }
-      else if (selectedTool === "line" || selectedTool === "arrow") {
+      else if (this.selectedTool === "line" || this.selectedTool === "arrow") {
         let endX = x;
         let endY = y;
-        if (e.shiftKey) {
+        if ((e as MouseEvent).shiftKey) {
           ({ x: endX, y: endY } = this.snapAngle(this.startX, this.startY, x, y));
         }
         this.previewShape = {
           id: "preview",
-          type: selectedTool,
+          type: this.selectedTool,
           startX: this.startX,
           startY: this.startY,
           endX,
@@ -529,14 +546,12 @@ export class Game {
         } as any
       }
 
-      // mark needs redraw and draw now (fast; drawVisible is optimized)
       this.needsRedraw = true
       this.drawVisible()
     }
   }
 
   private renderLoop = () => {
-    // if permanent is dirty, redraw (happens rarely)
     if (this.permanentDirty) {
       this.redrawPermanent()
     }
@@ -553,42 +568,95 @@ export class Game {
     this.canvas.addEventListener("mouseup", this.panMouseUp);
     this.canvas.addEventListener("mousemove", this.panMouseMove);
     this.canvas.addEventListener("wheel", this.wheelZoom, { passive: false });
-    // Prevent context menu on right-click
     this.canvas.addEventListener("contextmenu", this.blockMenu);
   }
+
   panMouseDown = (e: MouseEvent) => {
-    // For text tool or select tool, always handle left click first
+    // left click drawing
     if ((this.selectedTool === "text" || this.selectedTool === "select") && e.button === 0) {
       this.mouseDownHandler(e);
       return;
     }
-    if (e.button === 0) {          // left-click draws
+    if (e.button === 0) {
       this.mouseDownHandler(e);
-    } else if (e.button === 1 || e.button === 2) { // middle/right pan
+      return;
+    }
+
+    if (e.button === 1 || e.button === 2) {
+      if (this.momentumId) cancelAnimationFrame(this.momentumId), this.momentumId = null
+      if (this.zoomAnimId) cancelAnimationFrame(this.zoomAnimId), this.zoomAnimId = null
+
       this.isPanning = true;
-      this.lastPanX = e.clientX;
-      this.lastPanY = e.clientY;
+      // record in canvas pixel space for consistency
+      const p = this.getCanvasPoint(e.clientX, e.clientY)
+      this.lastPanX = p.x
+      this.lastPanY = p.y
+      this.panPositions = [{ x: p.x, y: p.y, t: performance.now() }]
     }
   }
 
   panMouseUp = (e: MouseEvent) => {
     if (e.button === 0) this.mouseUpHandler(e);
-    this.isPanning = false;
+    if (e.button === 1 || e.button === 2) {
+      this.isPanning = false;
+      this.startMomentumIfNeeded()
+    }
   }
 
   panMouseMove = (e: MouseEvent) => {
     if (this.isPanning) {
-      const dx = e.clientX - this.lastPanX;
-      const dy = e.clientY - this.lastPanY;
-      this.offsetX += dx;
-      this.offsetY += dy;
-      this.lastPanX = e.clientX;
-      this.lastPanY = e.clientY;
-      // panning moves view -> redraw visible
-      this.drawVisible();
-      return;
+      const p = this.getCanvasPoint(e.clientX, e.clientY)
+      const dx = p.x - this.lastPanX
+      const dy = p.y - this.lastPanY
+      this.offsetX += dx
+      this.offsetY += dy
+      this.lastPanX = p.x
+      this.lastPanY = p.y
+
+      // record sample (canvas pixels)
+      const now = performance.now()
+      this.panPositions.push({ x: p.x, y: p.y, t: now })
+      while (this.panPositions.length > 10 && (now - this.panPositions[0].t) > 250) this.panPositions.shift()
+
+      this.drawVisible()
+      return
     }
     this.mouseMoveHandler(e)
+  }
+
+  private startMomentumIfNeeded() {
+    const samples = this.panPositions
+    if (samples.length < 2) return
+    const last = samples[samples.length - 1]
+    let idx = samples.length - 2
+    while (idx > 0 && (last.t - samples[idx].t) < 50) idx--
+    const earlier = samples[idx]
+    const dt = (last.t - earlier.t) / 1000
+    if (dt <= 0) return
+    const vx = (last.x - earlier.x) / dt
+    const vy = (last.y - earlier.y) / dt
+    const speed = Math.hypot(vx, vy)
+    if (speed < 200) return
+
+    const friction = 0.94
+    let curVx = vx
+    let curVy = vy
+
+    const step = () => {
+      const dtSec = 16 / 1000
+      this.offsetX += curVx * dtSec
+      this.offsetY += curVy * dtSec
+      curVx *= friction
+      curVy *= friction
+      this.drawVisible()
+      if (Math.hypot(curVx, curVy) > 10) {
+        this.momentumId = requestAnimationFrame(step)
+      } else {
+        this.momentumId = null
+      }
+    }
+    if (this.momentumId) cancelAnimationFrame(this.momentumId)
+    this.momentumId = requestAnimationFrame(step)
   }
 
   undo() {
@@ -598,8 +666,7 @@ export class Game {
     console.log("Local undo", shape.id);
 
     this.redoStack.push(shape);
-    this.lastUndoId = shape.id; // Track this undo
-    // mark permanent dirty -> redraw
+    this.lastUndoId = shape.id;
     this.permanentDirty = true
     this.redrawPermanent()
     this.drawVisible()
@@ -615,11 +682,42 @@ export class Game {
 
   wheelZoom = (e: any) => {
     e.preventDefault();
-    const zoomAmount = -e.deltaY * 0.001;
-    this.scale *= 1 + zoomAmount;
-    this.scale = Math.max(0.2, Math.min(5, this.scale));
-    // redraw visible after zoom
-    this.drawVisible()
+    // compute canvas-local mouse position (crucial fix)
+    const p = this.getCanvasPoint(e.clientX, e.clientY)
+    const worldBefore = this.screenToWorld(p.x, p.y)
+
+    const delta = -e.deltaY
+    const zoomFactor = Math.exp(delta * 0.0018)
+    const targetScale = Math.max(0.2, Math.min(5, this.scale * zoomFactor))
+    if (Math.abs(targetScale - this.scale) < 1e-5) return
+
+    const targetOffsetX = p.x - worldBefore.x * targetScale
+    const targetOffsetY = p.y - worldBefore.y * targetScale
+
+    if (this.zoomAnimId) cancelAnimationFrame(this.zoomAnimId), this.zoomAnimId = null
+    if (this.momentumId) cancelAnimationFrame(this.momentumId), this.momentumId = null
+
+    const startScale = this.scale
+    const startOffX = this.offsetX
+    const startOffY = this.offsetY
+    const startTime = performance.now()
+    const duration = this.zoomDurationMs
+
+    const step = () => {
+      const now = performance.now()
+      const t = Math.min(1, (now - startTime) / duration)
+      const eased = this.zoomEasing(t)
+      this.scale = startScale + (targetScale - startScale) * eased
+      this.offsetX = startOffX + (targetOffsetX - startOffX) * eased
+      this.offsetY = startOffY + (targetOffsetY - startOffY) * eased
+      this.drawVisible()
+      if (t < 1) {
+        this.zoomAnimId = requestAnimationFrame(step)
+      } else {
+        this.zoomAnimId = null
+      }
+    }
+    this.zoomAnimId = requestAnimationFrame(step)
   }
 
   blockMenu = (e: any) => { e.preventDefault() }
@@ -631,8 +729,7 @@ export class Game {
     console.log("Local redo", shape.id);
 
     this.existingShapes.push(shape);
-    this.lastRedoId = shape.id; // Track this redo
-    // mark permanent dirty -> redraw
+    this.lastRedoId = shape.id;
     this.permanentDirty = true
     this.redrawPermanent()
     this.drawVisible()
@@ -642,23 +739,20 @@ export class Game {
         type: "shape_redo",
         roomId: this.roomId,
         shapeId: shape.id,
-        shape // Send full shape data
+        shape
       }));
     }
   }
 
   private createTextInput(screenX: number, screenY: number) {
-    // Create textarea element
     const ta = document.createElement('textarea');
-    // Set initial content to ensure it has size
     ta.value = 'Text here';
-    // Add debug styles to make it highly visible
     Object.assign(ta.style, {
       position: 'fixed',
       top: `${screenY}px`,
       left: `${screenX}px`,
       width: '200px',
-      height: '24px', // Set explicit height
+      height: '24px',
       zIndex: '2147483647',
       backgroundColor: 'yellow',
       color: 'black',
@@ -669,9 +763,8 @@ export class Game {
       resize: 'none',
       outline: 'none',
       pointerEvents: 'auto',
-      display: 'block', // Ensure it's visible
+      display: 'block',
     });
-    // Create a container to ensure proper rendering
     const container = document.createElement('div');
     Object.assign(container.style, {
       position: 'fixed',
@@ -682,21 +775,18 @@ export class Game {
     });
     container.appendChild(ta);
     document.body.appendChild(container);
-    console.log('Textarea container appended to body');
-    // Add a slight delay before focusing to prevent immediate blur
     setTimeout(() => {
       ta.focus();
       ta.select();
-      console.log('Textarea focused');
     }, 10);
     let committed = false
     const commit = () => {
       if (committed) return;
       committed = true
-      console.log('Committing text:', ta.value);
       const txt = ta.value.trim();
       if (txt) {
-        const world = this.screenToWorld(screenX, screenY);
+        const canv = this.getCanvasPoint(screenX, screenY)
+        const world = this.screenToWorld(canv.x, canv.y);
         const shape: Shape = {
           id: nanoid(),
           type: "text",
@@ -708,7 +798,6 @@ export class Game {
         this.existingShapes.push(shape);
         this.undoStack.push(shape);
         this.redoStack = [];
-        // mark permanent dirty -> redraw
         this.permanentDirty = true
         this.redrawPermanent()
         this.drawVisible()
@@ -732,13 +821,11 @@ export class Game {
     };
     ta.addEventListener('blur', commit);
     ta.addEventListener('keydown', handleKeydown);
-    // // Prevent clicks on textarea from propagating to canvas
     ta.addEventListener('mousedown', e => e.stopPropagation());
     ta.addEventListener('mouseup', e => e.stopPropagation());
   }
 
   private getShapeAt(x: number, y: number): Shape | null {
-    // We'll check shapes in reverse order (top to bottom in z-order)
     for (let i = this.existingShapes.length - 1; i >= 0; i--) {
       const shape = this.existingShapes[i];
       if (shape.type === "rect") {
@@ -756,21 +843,19 @@ export class Game {
         }
       }
       else if (shape.type === "pencil") {
-        // Simple point-in-path check (could be more sophisticated)
         for (const point of shape.points) {
           const dx = x - point.x;
           const dy = y - point.y;
-          if (dx * dx + dy * dy < 100) { // 10px radius
+          if (dx * dx + dy * dy < 100) {
             return shape;
           }
         }
       }
       else if (shape.type === "text") {
-        // Approximate text bounding box
         this.ctx.font = shape.font;
         const metrics = this.ctx.measureText(shape.text);
         if (x >= shape.x && x <= shape.x + metrics.width &&
-          y >= shape.y && y <= shape.y + 20) { // Approx text height
+          y >= shape.y && y <= shape.y + 20) {
           return shape;
         }
       }
@@ -787,28 +872,22 @@ export class Game {
   }
 
   exportToJPEG() {
-    // Create a temporary canvas for high-quality export
     const exportCanvas = document.createElement('canvas');
     const exportCtx = exportCanvas.getContext('2d');
     if (!exportCtx) {
       console.error('Failed to create export canvas context');
       return;
     }
-    // Set export dimensions (higher resolution)
-    const scaleFactor = 2; // For higher quality
+    const scaleFactor = 2;
     exportCanvas.width = this.canvas.width * scaleFactor;
     exportCanvas.height = this.canvas.height * scaleFactor;
-    // Fill background (since original canvas might be transparent)
     exportCtx.fillStyle = 'white';
     exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-    // Apply the same transformations but scaled up
     exportCtx.translate(this.offsetX * scaleFactor, this.offsetY * scaleFactor);
     exportCtx.scale(this.scale * scaleFactor, this.scale * scaleFactor);
-    // IMPORTANT: Draw all shapes in the correct order
+
     for (const shape of this.existingShapes) {
-      // Create a copy of the shape to avoid modifying the original
       const shapeCopy = { ...shape };
-      // Draw the shape on the export canvas
       if (shapeCopy.type === "rect") {
         exportCtx.strokeStyle = "black";
         exportCtx.strokeRect(shapeCopy.x, shapeCopy.y, shapeCopy.width, shapeCopy.height);
@@ -847,7 +926,6 @@ export class Game {
         exportCtx.lineTo(shapeCopy.endX, shapeCopy.endY);
         exportCtx.stroke();
 
-        // Arrowhead
         const angle = Math.atan2(shapeCopy.endY - shapeCopy.startY, shapeCopy.endX - shapeCopy.startX);
         const headLength = 10;
         exportCtx.beginPath();
@@ -863,23 +941,18 @@ export class Game {
         );
         exportCtx.stroke();
       }
-
     }
-    // Create download link
     const dataURL = exportCanvas.toDataURL('image/jpeg', 0.95);
     const link = document.createElement('a');
     link.href = dataURL;
     link.download = `Inkspire-${this.roomId}-${new Date().toISOString().slice(0, 10)}.jpg`;
-    // Trigger download
     document.body.appendChild(link);
     link.click();
-    // Clean up after a short delay
     setTimeout(() => {
       document.body.removeChild(link);
     }, 100);
   }
 
-  /** Snap end-point to the nearest 45-degree increment. */
   private snapAngle(startX: number, startY: number, endX: number, endY: number) {
     const dx = endX - startX;
     const dy = endY - startY;

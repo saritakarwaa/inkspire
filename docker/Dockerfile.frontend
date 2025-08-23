@@ -1,0 +1,23 @@
+FROM node:20-alpine AS builder
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Copy root config and lock files first (for caching)
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
+COPY package.json ./
+COPY turbo.json ./
+
+# Copy all packages and the frontend app
+COPY ./packages ./packages
+COPY ./apps/excalidraw-fe ./apps/excalidraw-fe
+
+# Install pnpm globally
+RUN npm install -g pnpm
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Build Next.js app
+RUN pnpm --filter excalidraw-fe run build
